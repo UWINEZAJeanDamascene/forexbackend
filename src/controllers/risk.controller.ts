@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
 import { ENABLED_SYMBOLS, ENABLED_TIMEFRAMES, Symbol, Timeframe } from '../../../shared/constants/instruments';
-import { getValidatedCandles } from '../services/marketDataService';
-import { computeIndicators } from '../analysis/indicatorService';
+import { getRiskAnalysis } from '../analysis/riskAnalysisService';
+import { RiskAnalysisRequest } from '../../../shared/types/riskAnalysis';
 import { createLogger } from '../utils/logger';
 
-const logger = createLogger('indicators.controller');
+const logger = createLogger('risk.controller');
 
 function isEnabledSymbol(value: string): value is Symbol {
   return (ENABLED_SYMBOLS as string[]).includes(value);
@@ -14,18 +14,11 @@ function isEnabledTimeframe(value: string): value is Timeframe {
   return (ENABLED_TIMEFRAMES as string[]).includes(value);
 }
 
-/**
- * GET /api/market/indicators?symbol=EUR/USD&timeframe=1H
- *
- * Returns all computed technical indicators for the requested symbol and
- * timeframe. Each indicator array is aligned with the returned candles
- * (same length, same order), so the frontend can overlay them on the chart
- * or display the latest values.
- */
-export async function getIndicators(req: Request, res: Response): Promise<void> {
+export async function getRiskEndpoint(req: Request, res: Response): Promise<void> {
   const symbol = String(req.query.symbol || '');
   const timeframe = String(req.query.timeframe || '');
-  const limitRaw = req.query.limit;
+  const accountSizeRaw = req.query.accountSize;
+  const maxRiskPercentRaw = req.query.maxRiskPercent;
 
   if (!isEnabledSymbol(symbol)) {
     res.status(400).json({
@@ -41,22 +34,31 @@ export async function getIndicators(req: Request, res: Response): Promise<void> 
     return;
   }
 
-  let limit: number | undefined;
-  if (limitRaw !== undefined) {
-    const parsed = Number(limitRaw);
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 500) {
-      res.status(400).json({ error: 'limit must be an integer between 1 and 500.' });
+  const request: RiskAnalysisRequest = { symbol, timeframe };
+
+  if (accountSizeRaw !== undefined) {
+    const parsed = Number(accountSizeRaw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      res.status(400).json({ error: 'accountSize must be a positive number.' });
       return;
     }
-    limit = parsed;
+    request.accountSize = parsed;
+  }
+
+  if (maxRiskPercentRaw !== undefined) {
+    const parsed = Number(maxRiskPercentRaw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      res.status(400).json({ error: 'maxRiskPercent must be a positive number.' });
+      return;
+    }
+    request.maxRiskPercent = parsed;
   }
 
   try {
-    const { candles } = await getValidatedCandles(symbol, timeframe, { limit });
-    const result = computeIndicators(candles, symbol, timeframe);
+    const result = await getRiskAnalysis(symbol, timeframe, request);
     res.status(200).json(result);
   } catch (err) {
-    logger.error('Failed to compute indicators', {
+    logger.error('Failed to compute risk analysis', {
       message: err instanceof Error ? err.message : String(err),
     });
     res.status(500).json({ error: 'Internal server error' });

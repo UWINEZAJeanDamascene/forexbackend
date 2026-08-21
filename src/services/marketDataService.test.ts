@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { getValidatedCandles } from './marketDataService';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { getValidatedCandles, clearCandleCache } from './marketDataService';
 import { DataValidationError } from '../validation';
 import { Candle } from '../../../shared/types/market';
 import { MarketDataProvider } from '../providers/MarketDataProvider';
@@ -28,6 +28,9 @@ function fakeProvider(candles: Candle[]): MarketDataProvider {
 }
 
 describe('getValidatedCandles', () => {
+  beforeEach(() => {
+    clearCandleCache();
+  });
   it('returns validated candles from the injected provider', async () => {
     const provider = fakeProvider([
       makeCandle('2024-01-01T10:00:00.000Z'),

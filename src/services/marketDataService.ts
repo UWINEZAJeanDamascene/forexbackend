@@ -2,34 +2,67 @@ import type { MarketDataProvider } from '../providers/MarketDataProvider';
 import { Candle } from '../../../shared/types/market';
 import { Symbol, Timeframe } from '../../../shared/constants/instruments';
 import { validateCandleSeries, CandleSeriesValidationResult } from '../validation';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('marketDataService');
+
+const CACHE_TTL_MS = 90_000;
+
+interface CandleCacheEntry {
+  timestamp: number;
+  data: Candle[];
+}
+
+const candleCache = new Map<string, CandleCacheEntry>();
+
+function candleCacheKey(symbol: Symbol, timeframe: Timeframe, limit?: number): string {
+  return `${symbol}:${timeframe}:${limit ?? 'default'}`;
+}
+
+function getCachedCandles(symbol: Symbol, timeframe: Timeframe, limit?: number): Candle[] | null {
+  const key = candleCacheKey(symbol, timeframe, limit);
+  const entry = candleCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    candleCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedCandles(symbol: Symbol, timeframe: Timeframe, limit: number | undefined, data: Candle[]): void {
+  const key = candleCacheKey(symbol, timeframe, limit);
+  candleCache.set(key, { timestamp: Date.now(), data });
+}
+
+export function clearCandleCache(): void {
+  candleCache.clear();
+}
 
 export interface GetValidatedCandlesOptions {
   limit?: number;
   minCandles?: number;
-  /**
-   * Inject a provider for testing. Defaults to the real
-   * getMarketDataProvider() singleton, imported lazily so this module can
-   * be used/tested without pulling in env/dotenv unless it's actually
-   * needed.
-   */
   provider?: MarketDataProvider;
 }
 
-/**
- * The entry point the rest of the app (indicators, analysis, API routes)
- * should use to get candle data. Composes the provider layer (Phase 3) with
- * the validation layer (Phase 4): fetch -> validate -> return only clean,
- * usable candles. Nothing downstream of this should ever call a provider
- * directly.
- */
 export async function getValidatedCandles(
   symbol: Symbol,
   timeframe: Timeframe,
   options: GetValidatedCandlesOptions = {}
 ): Promise<CandleSeriesValidationResult<Candle>> {
+  const cached = getCachedCandles(symbol, timeframe, options.limit);
+  if (cached) {
+    return validateCandleSeries(cached, timeframe, {
+      minCandles: options.minCandles,
+      context: { symbol, timeframe },
+    });
+  }
+
   const provider = options.provider ?? (await loadDefaultProvider());
 
   const rawCandles = await provider.getCandles(symbol, timeframe, options.limit);
+
+  setCachedCandles(symbol, timeframe, options.limit, rawCandles);
 
   return validateCandleSeries(rawCandles, timeframe, {
     minCandles: options.minCandles,

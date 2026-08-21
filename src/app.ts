@@ -7,6 +7,12 @@ import indicatorsRoutes from './routes/indicators.routes';
 import marketStructureRoutes from './routes/market-structure.routes';
 import supportResistanceRoutes from './routes/support-resistance.routes';
 import trendRoutes from './routes/trend.routes';
+import momentumRoutes from './routes/momentum.routes';
+import volatilityRoutes from './routes/volatility.routes';
+import multiTimeframeRoutes from './routes/multi-timeframe.routes';
+import setupsRoutes from './routes/setups.routes';
+import confidenceRoutes from './routes/confidence.routes';
+import riskRoutes from './routes/risk.routes';
 
 export function createApp(): Application {
   const app = express();
@@ -24,6 +30,12 @@ export function createApp(): Application {
   app.use('/api', marketStructureRoutes);
   app.use('/api', supportResistanceRoutes);
   app.use('/api', trendRoutes);
+  app.use('/api', momentumRoutes);
+  app.use('/api', volatilityRoutes);
+  app.use('/api', multiTimeframeRoutes);
+  app.use('/api/analysis', setupsRoutes);
+  app.use('/api/analysis', confidenceRoutes);
+  app.use('/api/analysis', riskRoutes);
 
   // Future routers (Phase 24 onward) will mount here, e.g.:
   // app.use('/api/analysis', analysisRoutes);

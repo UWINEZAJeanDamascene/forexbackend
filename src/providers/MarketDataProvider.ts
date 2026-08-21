@@ -32,6 +32,13 @@ export interface MarketDataProvider {
 
   getSupportedSymbols(): Symbol[];
   getSupportedTimeframes(): Timeframe[];
+
+  /**
+   * Whether this provider can return candle/quote data for standard forex
+   * pairs. Used by `FallbackProvider` to skip providers that don't support
+   * a given instrument class (e.g. Finnhub free tier has no forex data).
+   */
+  readonly supportsForex?: boolean;
 }
 
 /**

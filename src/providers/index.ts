@@ -1,17 +1,36 @@
 import { env } from '../config/env';
 import { MarketDataProvider } from './MarketDataProvider';
 import { TwelveDataProvider } from './twelveData/TwelveDataProvider';
+import { FinnhubProvider } from './finnhub/FinnhubProvider';
+import { FallbackProvider } from './FallbackProvider';
 
 let cachedProvider: MarketDataProvider | undefined;
 
-/**
- * The rest of the app should call this instead of importing a concrete
- * provider class. Swapping providers later means changing this function
- * only - no other file should import TwelveDataProvider directly.
- */
+function buildProviders(): MarketDataProvider[] {
+  const providers: MarketDataProvider[] = [];
+
+  if (env.twelveDataApiKey) {
+    providers.push(new TwelveDataProvider({ apiKey: env.twelveDataApiKey }));
+  }
+
+  if (env.finnhubApiKey) {
+    providers.push(new FinnhubProvider({ apiKey: env.finnhubApiKey }));
+  }
+
+  if (providers.length === 0) {
+    providers.push(new TwelveDataProvider({ apiKey: undefined }));
+  }
+
+  if (providers.length === 1) {
+    return providers;
+  }
+
+  return [new FallbackProvider(providers)];
+}
+
 export function getMarketDataProvider(): MarketDataProvider {
   if (!cachedProvider) {
-    cachedProvider = new TwelveDataProvider({ apiKey: env.twelveDataApiKey });
+    cachedProvider = buildProviders()[0]!;
   }
   return cachedProvider;
 }

@@ -26,6 +26,7 @@ export interface TwelveDataProviderOptions {
 
 export class TwelveDataProvider implements MarketDataProvider {
   readonly name = 'twelvedata';
+  readonly supportsForex = true;
 
   private readonly apiKey: string | undefined;
   private readonly baseUrl: string;

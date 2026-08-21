@@ -6,9 +6,15 @@ import {
   StructureEvent,
   StructureEventType,
   MarketStructureTrend,
+  CandlestickPattern,
 } from '../../shared/types/marketStructure';
+import { atr } from '../indicators/atr';
+import { detectCandlestickPatterns } from './candlestickPatternEngine';
 
 const DEFAULT_SWING_WINDOW = 2;
+const MIN_SWING_BARS = 3;
+const ATR_MULTIPLIER = 1.0;
+const ATR_PERIOD = 14;
 
 export function detectMarketStructure(
   candles: Candle[],
@@ -29,12 +35,38 @@ export function detectMarketStructure(
         higherLowsCount: 0,
         lowerHighsCount: 0,
         lowerLowsCount: 0,
+        candlestickPatterns: [],
       },
     };
   }
 
-  const swingHighs = findSwingHighs(candles, swingWindow);
-  const swingLows = findSwingLows(candles, swingWindow);
+  const rawHighs = findSwingHighs(candles, swingWindow);
+  const rawLows = findSwingLows(candles, swingWindow);
+
+  const atrValues = atr(candles, ATR_PERIOD);
+  const currentAtr = lastNonNil(atrValues);
+
+  const filtered = filterSwingsBySize(rawHighs, rawLows, currentAtr, candles.length);
+
+  const swingHighs = filtered.highs;
+  const swingLows = filtered.lows;
+
+  const maxCandleRange = Math.max(...candles.map((c) => c.high - c.low));
+  const maxSwingMove =
+    swingHighs.length > 0 || swingLows.length > 0
+      ? Math.max(
+          ...swingHighs.map((s) => s.price - candles[s.index].low),
+          ...swingLows.map((s) => candles[s.index].high - s.price)
+        )
+      : 0;
+
+  if (maxCandleRange > maxSwingMove * 2 && maxCandleRange > 0) {
+    console.warn(
+      `[structure] Large unclassified candle range detected: max range=${maxCandleRange.toFixed(5)} ` +
+        `but max swing move=${maxSwingMove.toFixed(5)}. ` +
+        `Check for extreme wicks, bad ticks, or ATR filter dropping valid swings.`
+    );
+  }
 
   const classifiedHighs = classifySwingHighs(swingHighs);
   const classifiedLows = classifySwingLows(swingLows);
@@ -45,6 +77,8 @@ export function detectMarketStructure(
 
   const allEvents = [...classifiedHighs.events, ...classifiedLows.events, ...bosChochEvents];
   allEvents.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  const candlestickPatterns = detectCandlestickPatterns(candles);
 
   return {
     symbol: '',
@@ -60,6 +94,7 @@ export function detectMarketStructure(
       higherLowsCount: classifiedLows.higherLowsCount,
       lowerHighsCount: classifiedHighs.lowerHighsCount,
       lowerLowsCount: classifiedLows.lowerLowsCount,
+      candlestickPatterns,
     },
   };
 }
@@ -76,12 +111,13 @@ function findSwingHighs(candles: Candle[], window: number): SwingPoint[] {
   const swings: SwingPoint[] = [];
   const len = candles.length;
 
-  for (let i = window; i < len - window; i++) {
+  for (let i = window; i < len; i++) {
     const currentHigh = candles[i].high;
     let isSwingHigh = true;
 
     for (let j = i - window; j <= i + window; j++) {
       if (j === i) continue;
+      if (j >= len) break;
       if (candles[j].high >= currentHigh) {
         isSwingHigh = false;
         break;
@@ -105,12 +141,13 @@ function findSwingLows(candles: Candle[], window: number): SwingPoint[] {
   const swings: SwingPoint[] = [];
   const len = candles.length;
 
-  for (let i = window; i < len - window; i++) {
+  for (let i = window; i < len; i++) {
     const currentLow = candles[i].low;
     let isSwingLow = true;
 
     for (let j = i - window; j <= i + window; j++) {
       if (j === i) continue;
+      if (j >= len) break;
       if (candles[j].low <= currentLow) {
         isSwingLow = false;
         break;
@@ -254,16 +291,16 @@ function detectBosAndChoch(
     if (lastHigh && lastClose > lastHigh.price) {
       events.push({
         type: 'break_of_structure',
-        timestamp: lastCandle.timestamp,
-        price: lastClose,
+        timestamp: lastHigh.timestamp,
+        price: lastHigh.price,
         description: `Bullish Break of Structure: close ${lastClose} above recent swing high ${lastHigh.price}`,
       });
     }
     if (lastLow && lastClose < lastLow.price) {
       events.push({
         type: 'change_of_character',
-        timestamp: lastCandle.timestamp,
-        price: lastClose,
+        timestamp: lastLow.timestamp,
+        price: lastLow.price,
         description: `Bullish Change of Character: close ${lastClose} below recent swing low ${lastLow.price}`,
       });
     }
@@ -273,20 +310,83 @@ function detectBosAndChoch(
     if (lastLow && lastClose < lastLow.price) {
       events.push({
         type: 'break_of_structure',
-        timestamp: lastCandle.timestamp,
-        price: lastClose,
+        timestamp: lastLow.timestamp,
+        price: lastLow.price,
         description: `Bearish Break of Structure: close ${lastClose} below recent swing low ${lastLow.price}`,
       });
     }
     if (lastHigh && lastClose > lastHigh.price) {
       events.push({
         type: 'change_of_character',
-        timestamp: lastCandle.timestamp,
-        price: lastClose,
+        timestamp: lastHigh.timestamp,
+        price: lastHigh.price,
         description: `Bearish Change of Character: close ${lastClose} above recent swing high ${lastHigh.price}`,
       });
     }
   }
 
   return events;
+}
+
+function lastNonNil(values: (number | null)[]): number | null {
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (values[i] !== null && values[i] !== undefined) {
+      return values[i];
+    }
+  }
+  return null;
+}
+
+interface FilteredSwings {
+  highs: SwingPoint[];
+  lows: SwingPoint[];
+}
+
+function filterSwingsBySize(
+  highs: SwingPoint[],
+  lows: SwingPoint[],
+  atrValue: number | null,
+  candleCount: number
+): FilteredSwings {
+  const atrThreshold = atrValue !== null ? atrValue * ATR_MULTIPLIER : null;
+
+  const filteredHighs = filterByType(highs, atrThreshold);
+  const filteredLows = filterByType(lows, atrThreshold);
+
+  return {
+    highs: filteredHighs,
+    lows: filteredLows,
+  };
+}
+
+function filterByType(
+  swings: SwingPoint[],
+  atrThreshold: number | null
+): SwingPoint[] {
+  if (swings.length === 0) return [];
+
+  const kept: SwingPoint[] = [];
+  let lastKeptIndex = -Infinity;
+  let lastKeptPrice: number | null = null;
+
+  for (const swing of swings) {
+    const barsSinceLast = swing.index - lastKeptIndex;
+
+    if (barsSinceLast < MIN_SWING_BARS) {
+      continue;
+    }
+
+    if (atrThreshold !== null && lastKeptPrice !== null) {
+      const priceMove = Math.abs(swing.price - lastKeptPrice);
+      if (priceMove < atrThreshold) {
+        continue;
+      }
+    }
+
+    kept.push(swing);
+    lastKeptIndex = swing.index;
+    lastKeptPrice = swing.price;
+  }
+
+  return kept;
 }

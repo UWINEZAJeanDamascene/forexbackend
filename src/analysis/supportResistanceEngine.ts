@@ -1,10 +1,19 @@
 import { Candle } from '../../shared/types/market';
 import { SupportResistanceResponse, SupportResistanceLevel } from '../../shared/types/supportResistance';
+import { atr } from '../indicators/atr';
 
 const DEFAULT_SWING_WINDOW = 2;
-const ZONE_TOLERANCE_PERCENT = 0.002; // 0.2% tolerance for clustering
-const MIN_LEVEL_DISTANCE_PERCENT = 0.0015; // minimum distance between returned levels
+const ATR_MULTIPLIER = 0.5;
+const ATR_PERIOD = 14;
+const MIN_STRENGTH = 35;
 const MAX_LEVELS = 3;
+const PROXIMITY_ATR_MULTIPLE = 3.0;
+const RELEVANCE_WINDOW = 100;
+/** Cap zone width so clusters cannot span most of the visible range. */
+const MAX_ZONE_WIDTH_ATR = 1.0;
+/** Soft swing levels kept when hard clusters leave a side empty near price. */
+const SOFT_LEVEL_STRENGTH = 48;
+const SOFT_LEVEL_ZONE_ATR = 0.35;
 
 export function detectSupportResistance(
   candles: Candle[],
@@ -16,30 +25,97 @@ export function detectSupportResistance(
       timeframe: '',
       supports: [],
       resistances: [],
+      tested: [],
     };
   }
 
   const swingHighs = findSwingHighs(candles, swingWindow);
   const swingLows = findSwingLows(candles, swingWindow);
 
-  const resistanceZones = clusterAndScore(swingHighs, 'resistance', candles);
-  const supportZones = clusterAndScore(swingLows, 'support', candles);
+  const atrValues = atr(candles, Math.min(ATR_PERIOD, Math.max(candles.length - 1, 1)));
+  const currentAtr = lastNonNil(atrValues);
+  const tolerance =
+    currentAtr !== null
+      ? currentAtr * ATR_MULTIPLIER
+      : Math.max(
+          (Math.max(...candles.map((c) => c.high)) - Math.min(...candles.map((c) => c.low))) * 0.05,
+          0.0001
+        );
 
-  const resistances = pruneCloseLevels(
-    resistanceZones
-      .sort((a, b) => b.strength - a.strength)
+  const resistanceZones = clusterAndScore(swingHighs, 'resistance', candles, tolerance);
+  const supportZones = clusterAndScore(swingLows, 'support', candles, tolerance);
+
+  const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : null;
+
+  const allLevels = [...resistanceZones, ...supportZones];
+  const maxTouches = allLevels.length > 0 ? Math.max(...allLevels.map((l) => l.touches)) : 1;
+
+  const withStrength = allLevels.map((level) => ({
+    ...level,
+    strength: calculateStrength(level.touches, level.lastReactionTime, candles, maxTouches),
+  }));
+
+  const merged = mergeSupportResistanceLevels(withStrength);
+
+  const { supports, resistances, tested } = classifyZones(merged, currentPrice, currentAtr, candles);
+
+  ensureNearestSwingLevels(
+    supports,
+    resistances,
+    tested,
+    swingHighs,
+    swingLows,
+    currentPrice,
+    currentAtr
   );
 
-  const supports = pruneCloseLevels(
-    supportZones
-      .sort((a, b) => b.strength - a.strength)
-  );
+  if (resistances.length === 0 && (swingHighs.length > 0 || swingLows.length > 0) && currentPrice !== null && currentAtr !== null && currentAtr > 0) {
+    const projected = projectResistanceLevels(currentPrice, currentAtr);
+    resistances.push(...projected);
+  }
+
+  const finalResistances = resistances
+    .filter((level) => level.strength >= MIN_STRENGTH)
+    .sort((a, b) => b.strength - a.strength);
+
+  const finalSupports = supports
+    .filter((level) => level.strength >= MIN_STRENGTH)
+    .sort((a, b) => b.strength - a.strength);
+
+  const finalTested = tested
+    .filter((level) => level.strength >= MIN_STRENGTH)
+    .sort((a, b) => b.strength - a.strength);
 
   return {
     symbol: '',
     timeframe: '',
-    supports: supports.slice(0, MAX_LEVELS),
-    resistances: resistances.slice(0, MAX_LEVELS),
+    supports: finalSupports.slice(0, MAX_LEVELS).map((level) => {
+      const clamped = clampZoneWidth(level, currentAtr);
+      return {
+        ...level,
+        zoneLow: clamped.zoneLow,
+        zoneHigh: clamped.zoneHigh,
+        price: Math.min(Math.max(clamped.price, clamped.zoneLow), clamped.zoneHigh),
+      };
+    }),
+    resistances: finalResistances.slice(0, MAX_LEVELS).map((level) => {
+      const clamped = clampZoneWidth(level, currentAtr);
+      return {
+        ...level,
+        zoneLow: clamped.zoneLow,
+        zoneHigh: clamped.zoneHigh,
+        price: Math.min(Math.max(clamped.price, clamped.zoneLow), clamped.zoneHigh),
+      };
+    }),
+    tested: finalTested.slice(0, MAX_LEVELS).map((level) => {
+      const clamped = clampZoneWidth(level, currentAtr);
+      return {
+        ...level,
+        zoneLow: clamped.zoneLow,
+        zoneHigh: clamped.zoneHigh,
+        price: Math.min(Math.max(clamped.price, clamped.zoneLow), clamped.zoneHigh),
+      };
+    }),
   };
 }
 
@@ -47,12 +123,13 @@ function findSwingHighs(candles: Candle[], window: number): { price: number; tim
   const swings: { price: number; timestamp: string; index: number }[] = [];
   const len = candles.length;
 
-  for (let i = window; i < len - window; i++) {
+  for (let i = window; i < len; i++) {
     const currentHigh = candles[i].high;
     let isSwingHigh = true;
 
     for (let j = i - window; j <= i + window; j++) {
       if (j === i) continue;
+      if (j >= len) break;
       if (candles[j].high >= currentHigh) {
         isSwingHigh = false;
         break;
@@ -75,12 +152,13 @@ function findSwingLows(candles: Candle[], window: number): { price: number; time
   const swings: { price: number; timestamp: string; index: number }[] = [];
   const len = candles.length;
 
-  for (let i = window; i < len - window; i++) {
+  for (let i = window; i < len; i++) {
     const currentLow = candles[i].low;
     let isSwingLow = true;
 
     for (let j = i - window; j <= i + window; j++) {
       if (j === i) continue;
+      if (j >= len) break;
       if (candles[j].low <= currentLow) {
         isSwingLow = false;
         break;
@@ -102,23 +180,22 @@ function findSwingLows(candles: Candle[], window: number): { price: number; time
 function clusterAndScore(
   swings: { price: number; timestamp: string; index: number }[],
   type: 'support' | 'resistance',
-  candles: Candle[]
+  candles: Candle[],
+  tolerance: number
 ): SupportResistanceLevel[] {
   if (swings.length === 0) return [];
 
   const sorted = [...swings].sort((a, b) => a.price - b.price);
   const zones: { price: number; zoneLow: number; zoneHigh: number; swings: typeof sorted }[] = [];
 
-  const priceMin = sorted[0].price;
-  const priceMax = sorted[sorted.length - 1].price;
-  const priceRange = priceMax - priceMin || 0.0001;
-  const tolerance = priceRange * ZONE_TOLERANCE_PERCENT;
+  const effectiveTolerance = tolerance;
 
   for (const swing of sorted) {
-    const cluster = zones.find((z) => Math.abs(swing.price - z.price) <= tolerance);
+    const cluster = zones.find((z) => Math.abs(swing.price - z.price) <= effectiveTolerance);
     if (cluster) {
       cluster.swings.push(swing);
-      cluster.price = cluster.swings.reduce((sum, s) => sum + s.price, 0) / cluster.swings.length;
+      const totalTouches = cluster.swings.length;
+      cluster.price = cluster.swings.reduce((sum, s) => sum + s.price, 0) / totalTouches;
       cluster.zoneLow = Math.min(...cluster.swings.map((s) => s.price));
       cluster.zoneHigh = Math.max(...cluster.swings.map((s) => s.price));
     } else {
@@ -132,24 +209,25 @@ function clusterAndScore(
   }
 
   for (const zone of zones) {
-    const clusterRange = zone.zoneHigh - zone.zoneLow || 0.0001;
-    const padding = Math.max(clusterRange * 0.1, tolerance * 0.5);
+    const clusterRange = zone.zoneHigh - zone.zoneLow || effectiveTolerance;
+    const padding = Math.max(clusterRange * 0.1, effectiveTolerance * 0.5);
     zone.zoneLow = zone.zoneLow - padding;
     zone.zoneHigh = zone.zoneHigh + padding;
   }
 
-  return zones
+  const merged = mergeOverlappingZones(zones, effectiveTolerance * 2);
+
+  return merged
     .map((zone) => {
       const touches = zone.swings.length;
       const lastReactionTime = zone.swings.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0].timestamp;
-      const strength = calculateStrength(touches, lastReactionTime, candles);
 
       return {
         price: zone.price,
         zoneLow: zone.zoneLow,
         zoneHigh: zone.zoneHigh,
         type,
-        strength,
+        strength: 0,
         touches,
         lastReactionTime,
       } as SupportResistanceLevel;
@@ -157,34 +235,257 @@ function clusterAndScore(
     .filter((level) => level.touches >= 1);
 }
 
-function pruneCloseLevels(levels: SupportResistanceLevel[]): SupportResistanceLevel[] {
-  if (levels.length <= 1) return levels;
+function mergeOverlappingZones(
+  zones: { price: number; zoneLow: number; zoneHigh: number; swings: { price: number; timestamp: string; index: number }[] }[],
+  maxMergeWidth: number
+): { price: number; zoneLow: number; zoneHigh: number; swings: { price: number; timestamp: string; index: number }[] }[] {
+  if (zones.length <= 1) return zones;
 
-  const priceMin = Math.min(...levels.map((l) => l.price));
-  const priceMax = Math.max(...levels.map((l) => l.price));
-  const priceRange = priceMax - priceMin || 0.0001;
-  const minDistance = priceRange * MIN_LEVEL_DISTANCE_PERCENT;
+  const sorted = [...zones].sort((a, b) => a.zoneLow - b.zoneLow);
+  const merged: typeof sorted = [];
+  let current = sorted[0];
 
-  const pruned: SupportResistanceLevel[] = [];
-
-  for (const level of levels) {
-    const tooClose = pruned.some((existing) => {
-      const overlap = Math.min(existing.zoneHigh, level.zoneHigh) - Math.max(existing.zoneLow, level.zoneLow);
-      return overlap > 0 || Math.abs(existing.price - level.price) < minDistance;
-    });
-
-    if (!tooClose) {
-      pruned.push(level);
+  for (let i = 1; i < sorted.length; i++) {
+    const next = sorted[i];
+    const wouldOverlap = current.zoneHigh >= next.zoneLow;
+    const mergedWidth = Math.max(current.zoneHigh, next.zoneHigh) - Math.min(current.zoneLow, next.zoneLow);
+    // Only merge when overlap is tight; never create a zone wider than maxMergeWidth.
+    if (wouldOverlap && mergedWidth <= maxMergeWidth) {
+      current = {
+        price: (current.price * current.swings.length + next.price * next.swings.length) / (current.swings.length + next.swings.length),
+        zoneLow: Math.min(current.zoneLow, next.zoneLow),
+        zoneHigh: Math.max(current.zoneHigh, next.zoneHigh),
+        swings: [...current.swings, ...next.swings],
+      };
+    } else {
+      merged.push(current);
+      current = next;
     }
   }
 
-  return pruned;
+  merged.push(current);
+  return merged;
 }
 
-function calculateStrength(touches: number, lastReactionTime: string, candles: Candle[]): number {
+function mergeSupportResistanceLevels(
+  levels: SupportResistanceLevel[]
+): SupportResistanceLevel[] {
+  if (levels.length <= 1) return levels;
+
+  const sorted = [...levels].sort((a, b) => a.zoneLow - b.zoneLow);
+  const merged: SupportResistanceLevel[] = [];
+  let current = sorted[0];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const next = sorted[i];
+    const wouldOverlap = current.zoneHigh >= next.zoneLow;
+    const mergedWidth = Math.max(current.zoneHigh, next.zoneHigh) - Math.min(current.zoneLow, next.zoneLow);
+    const currentWidth = current.zoneHigh - current.zoneLow;
+    // Prefer not merging across type boundaries or into oversized zones.
+    const maxAllowed = Math.max(currentWidth, next.zoneHigh - next.zoneLow) * 1.5;
+    if (wouldOverlap && current.type === next.type && mergedWidth <= maxAllowed) {
+      const totalTouches = current.touches + next.touches;
+      current = {
+        price: totalTouches > 0 ? (current.price * current.touches + next.price * next.touches) / totalTouches : current.price,
+        zoneLow: Math.min(current.zoneLow, next.zoneLow),
+        zoneHigh: Math.max(current.zoneHigh, next.zoneHigh),
+        type: current.type,
+        strength: Math.max(current.strength, next.strength),
+        touches: totalTouches,
+        lastReactionTime: new Date(current.lastReactionTime) > new Date(next.lastReactionTime) ? current.lastReactionTime : next.lastReactionTime,
+      };
+    } else {
+      merged.push(current);
+      current = next;
+    }
+  }
+
+  merged.push(current);
+  return merged;
+}
+
+function clampZoneWidth(
+  level: SupportResistanceLevel,
+  currentAtr: number | null
+): Pick<SupportResistanceLevel, 'zoneLow' | 'zoneHigh' | 'price'> {
+  const width = level.zoneHigh - level.zoneLow;
+  const maxWidth =
+    currentAtr !== null && currentAtr > 0 ? currentAtr * MAX_ZONE_WIDTH_ATR : width;
+
+  if (width <= maxWidth || maxWidth <= 0) {
+    return { zoneLow: level.zoneLow, zoneHigh: level.zoneHigh, price: level.price };
+  }
+
+  const half = maxWidth / 2;
+  const center = level.price;
+  return {
+    price: center,
+    zoneLow: center - half,
+    zoneHigh: center + half,
+  };
+}
+
+/**
+ * If the nearest actionable side is missing, keep the most recent swing
+ * high/low as a soft level so the chart is not support-only or resistance-only.
+ */
+function ensureNearestSwingLevels(
+  supports: SupportResistanceLevel[],
+  resistances: SupportResistanceLevel[],
+  tested: SupportResistanceLevel[],
+  swingHighs: { price: number; timestamp: string; index: number }[],
+  swingLows: { price: number; timestamp: string; index: number }[],
+  currentPrice: number | null,
+  currentAtr: number | null
+): void {
+  if (currentPrice === null) return;
+
+  const atrPad =
+    currentAtr !== null && currentAtr > 0 ? currentAtr * SOFT_LEVEL_ZONE_ATR : currentPrice * 0.0005;
+  const proximity =
+    currentAtr !== null && currentAtr > 0 ? currentAtr * PROXIMITY_ATR_MULTIPLE : currentPrice * 0.01;
+  // When the book is empty on one side, allow a wider search for the nearest swing.
+  const wideProximity = proximity * 2.5;
+
+  const hasNearbyResistance =
+    resistances.some((r) => r.zoneLow - currentPrice <= proximity && r.zoneLow > currentPrice) ||
+    tested.some((t) => t.zoneHigh >= currentPrice && t.zoneLow <= currentPrice);
+
+  if (!hasNearbyResistance) {
+    const above = swingHighs
+      .filter((s) => s.price > currentPrice)
+      .sort((a, b) => a.price - b.price || b.index - a.index);
+    const nearest = above.find((s) => s.price - currentPrice <= wideProximity) ?? above[0];
+    if (nearest && nearest.price - currentPrice <= wideProximity) {
+      resistances.push({
+        price: nearest.price,
+        zoneLow: nearest.price - atrPad,
+        zoneHigh: nearest.price + atrPad,
+        type: 'resistance',
+        strength: SOFT_LEVEL_STRENGTH,
+        touches: 1,
+        lastReactionTime: nearest.timestamp,
+      });
+    }
+  }
+
+  const hasNearbySupport =
+    supports.some((s) => currentPrice - s.zoneHigh <= proximity && s.zoneHigh < currentPrice) ||
+    tested.some((t) => t.zoneHigh >= currentPrice && t.zoneLow <= currentPrice);
+
+  if (!hasNearbySupport) {
+    const below = swingLows
+      .filter((s) => s.price < currentPrice)
+      .sort((a, b) => b.price - a.price || b.index - a.index);
+    const nearest = below.find((s) => currentPrice - s.price <= wideProximity) ?? below[0];
+    if (nearest && currentPrice - nearest.price <= wideProximity) {
+      supports.push({
+        price: nearest.price,
+        zoneLow: nearest.price - atrPad,
+        zoneHigh: nearest.price + atrPad,
+        type: 'support',
+        strength: SOFT_LEVEL_STRENGTH,
+        touches: 1,
+        lastReactionTime: nearest.timestamp,
+      });
+    }
+  }
+}
+
+function classifyZones(
+  levels: SupportResistanceLevel[],
+  currentPrice: number | null,
+  currentAtr: number | null,
+  candles: Candle[]
+): { supports: SupportResistanceLevel[]; resistances: SupportResistanceLevel[]; tested: SupportResistanceLevel[] } {
+  if (currentPrice === null) {
+    return {
+      supports: levels.filter((l) => l.type === 'support'),
+      resistances: levels.filter((l) => l.type === 'resistance'),
+      tested: [],
+    };
+  }
+
+  const supports: SupportResistanceLevel[] = [];
+  const resistances: SupportResistanceLevel[] = [];
+  const tested: SupportResistanceLevel[] = [];
+
+  for (const level of levels) {
+    if (level.zoneHigh < currentPrice) {
+      supports.push({ ...level, type: 'support' });
+    } else if (level.zoneLow > currentPrice) {
+      resistances.push({ ...level, type: 'resistance' });
+    } else {
+      tested.push({ ...level, type: 'tested' });
+    }
+  }
+
+  return { supports, resistances, tested };
+}
+
+function projectResistanceLevels(currentPrice: number, currentAtr: number): SupportResistanceLevel[] {
+  const projected: SupportResistanceLevel[] = [];
+  const atr1 = currentAtr;
+  const atr2 = currentAtr * 2;
+  const round1 = Math.round(currentPrice / atr1) * atr1;
+  const round2 = Math.round(currentPrice / atr2) * atr2;
+
+  const levels = [currentPrice + atr1, currentPrice + atr2, round1, round2].filter((p) => p > currentPrice);
+  const unique = Array.from(new Set(levels)).sort((a, b) => a - b);
+
+  const maxZoneWidth = currentAtr * 0.4;
+
+  for (const price of unique) {
+    const halfWidth = maxZoneWidth / 2;
+    projected.push({
+      price,
+      zoneLow: price - halfWidth,
+      zoneHigh: price + halfWidth,
+      type: 'resistance',
+      strength: 40,
+      touches: 0,
+      lastReactionTime: new Date().toISOString(),
+    });
+  }
+
+  return projected;
+}
+
+function isRelevant(
+  level: SupportResistanceLevel,
+  currentPrice: number,
+  currentAtr: number | null,
+  relevanceThresholdTime: number
+): boolean {
+  const lastReactionDate = new Date(level.lastReactionTime).getTime();
+
+  if (lastReactionDate >= relevanceThresholdTime) {
+    return true;
+  }
+
+  if (currentAtr !== null) {
+    const distance = currentAtr * PROXIMITY_ATR_MULTIPLE;
+    const levelPrice = level.type === 'resistance' ? level.zoneHigh : level.zoneLow;
+    return Math.abs(levelPrice - currentPrice) <= distance;
+  }
+
+  return false;
+}
+
+function lastNonNil(values: (number | null)[]): number | null {
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (values[i] !== null && values[i] !== undefined) {
+      return values[i];
+    }
+  }
+  return null;
+}
+
+function calculateStrength(touches: number, lastReactionTime: string, candles: Candle[], maxTouches: number): number {
   let score = 0;
 
-  score += Math.min(touches * 15, 45);
+  const touchRatio = maxTouches > 0 ? touches / maxTouches : 0;
+  score += touchRatio * 45;
 
   const lastReactionDate = new Date(lastReactionTime).getTime();
   const lastCandleDate = new Date(candles[candles.length - 1].timestamp).getTime();
@@ -200,7 +501,7 @@ function calculateStrength(touches: number, lastReactionTime: string, candles: C
 
   if (touches >= 3) {
     score += 15;
-  } else if (touches >= 2) {
+  } else if (touches === 2) {
     score += 10;
   }
 
@@ -208,5 +509,27 @@ function calculateStrength(touches: number, lastReactionTime: string, candles: C
     score += 15;
   }
 
-  return Math.min(Math.max(score, 1), 100);
+  return Math.min(Math.max(Math.round(score), 1), 100);
 }
+
+/*
+ * Strength formula (0-100):
+ *
+ *   score = touchRatio * 45
+ *          + recencyBonus
+ *          + touchCountBonus
+ *          + recentTouchBonus
+ *
+ * Where:
+ *   touchRatio = touches / maxTouches (across all levels in this scan)
+ *   recencyBonus = 25 if <24h, 15 if <72h, 5 if <168h, else 0
+ *   touchCountBonus = 15 if touches>=3, 10 if touches==2, else 0
+ *   recentTouchBonus = 15 if touches>=2 AND <72h since last reaction
+ *
+ * Weighting logic (one-line summary):
+ *   Touch dominance is intentionally reduced; a level with many old touches
+ *   can score lower than a recently-tested level with fewer touches, because
+ *   recency and recent-touch frequency are weighted more heavily than raw
+ *   touch count. This matches the intuition that a recently-tested level is
+ *   usually more actionable than an ancient one with a few extra touches.
+ */

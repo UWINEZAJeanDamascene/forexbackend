@@ -72,7 +72,11 @@ describe('analyzeTrend', () => {
 
   it('returns neutral for mixed evidence', () => {
     const candles = makeCandles([1.16, 1.15, 1.17]);
-    const indicators = makeIndicators();
+    const indicators = makeIndicators({
+      ema20: [1.16],
+      ema50: [1.17],
+      ema200: [1.18],
+    });
     const structure = makeStructure('range', 1, 1, 1, 1);
     const result = analyzeTrend(candles, indicators, structure);
 
@@ -105,8 +109,13 @@ describe('analyzeTrend', () => {
   });
 
   it('handles insufficient structure without crashing', () => {
-    const candles = makeCandles([1.16, 1.17, 1.18]);
-    const indicators = makeIndicators();
+    const candles = makeCandles([1.16, 1.16, 1.16]);
+    const indicators = makeIndicators({
+      ema20: [1.16],
+      ema50: [1.16],
+      ema200: [1.16],
+      atr14: [0.001],
+    });
     const structure = makeStructure('unclear');
     const result = analyzeTrend(candles, indicators, structure);
 
@@ -136,5 +145,100 @@ describe('analyzeTrend', () => {
     expect(result.factors.marketStructure.direction).toBe('bullish');
     expect(result.factors.priceVsEma.direction).toBe('bullish');
     expect(result.factors.recentHighsLows.direction).toBe('bullish');
+  });
+
+  it('produces granular scores for strong bullish conditions', () => {
+    const candles = makeCandles([1.20, 1.21, 1.22]);
+    const indicators = makeIndicators({
+      ema20: [1.22],
+      ema50: [1.20],
+      ema200: [1.18],
+      atr14: [0.01],
+    });
+    const structure = makeStructure('bullish', 4, 3, 0, 0);
+    const result = analyzeTrend(candles, indicators, structure);
+
+    expect(result.trend).toBe('bullish');
+    expect(result.score).toBeGreaterThan(70);
+    expect(result.strength).toBe('strong');
+  });
+
+  it('produces granular scores for strong bearish conditions', () => {
+    const candles = makeCandles([1.14, 1.13, 1.12]);
+    const indicators = makeIndicators({
+      ema20: [1.12],
+      ema50: [1.14],
+      ema200: [1.16],
+      atr14: [0.01],
+    });
+    const structure = makeStructure('bearish', 0, 0, 4, 3);
+    const result = analyzeTrend(candles, indicators, structure);
+
+    expect(result.trend).toBe('bearish');
+    expect(result.score).toBeLessThan(-70);
+    expect(result.strength).toBe('strong');
+  });
+
+  it('produces mid-range scores for weak or choppy conditions', () => {
+    const candles = makeCandles([1.16, 1.15, 1.17]);
+    const indicators = makeIndicators({
+      ema20: [1.16],
+      ema50: [1.16],
+      ema200: [1.16],
+      atr14: [0.01],
+    });
+    const structure = makeStructure('range', 1, 0, 1, 0);
+    const result = analyzeTrend(candles, indicators, structure);
+
+    expect(result.trend).toBe('neutral');
+    expect(Math.abs(result.score)).toBeLessThan(40);
+    expect(result.strength).toBe('weak');
+  });
+
+  it('does not let aggregate count majority override strict structure trend', () => {
+    const candles = makeCandles([1.16, 1.15, 1.17]);
+    const indicators = makeIndicators({
+      ema20: [1.16],
+      ema50: [1.16],
+      ema200: [1.16],
+      atr14: [0.01],
+    });
+    const structure = makeStructure('range', 11, 18, 11, 14);
+    const result = analyzeTrend(candles, indicators, structure);
+
+    expect(result.factors.marketStructure.direction).toBe('neutral');
+    expect(result.factors.marketStructure.score).toBe(0);
+  });
+
+  it('labels price vs EMA bearish when price is below EMA20 even if above EMA50/200', () => {
+    const candles = makeCandles([1.163, 1.162, 1.161]);
+    const indicators = makeIndicators({
+      ema20: [1.164],
+      ema50: [1.160],
+      ema200: [1.150],
+      atr14: [0.001],
+    });
+    const structure = makeStructure('bullish', 2, 2, 0, 0);
+    const result = analyzeTrend(candles, indicators, structure);
+
+    expect(result.factors.priceVsEma.direction).toBe('bearish');
+    expect(result.priceVsEmaBreakdown.vsEma20).toBe('bearish');
+    expect(result.priceVsEmaBreakdown.vsEma50).toBe('bullish');
+    expect(result.priceVsEmaBreakdown.vsEma200).toBe('bullish');
+  });
+
+  it('labels price vs EMA bullish when price is above EMA20', () => {
+    const candles = makeCandles([1.165, 1.166, 1.167]);
+    const indicators = makeIndicators({
+      ema20: [1.164],
+      ema50: [1.162],
+      ema200: [1.158],
+      atr14: [0.001],
+    });
+    const structure = makeStructure('bullish', 2, 2, 0, 0);
+    const result = analyzeTrend(candles, indicators, structure);
+
+    expect(result.factors.priceVsEma.direction).toBe('bullish');
+    expect(result.priceVsEmaBreakdown.vsEma20).toBe('bullish');
   });
 });

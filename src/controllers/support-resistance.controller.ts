@@ -19,6 +19,7 @@ export async function getSupportResistanceEndpoint(req: Request, res: Response):
   const timeframe = String(req.query.timeframe || '');
   const swingWindowRaw = req.query.swingWindow;
   const swingWindow = swingWindowRaw !== undefined ? Number(swingWindowRaw) : undefined;
+  const limitRaw = req.query.limit;
 
   if (!isEnabledSymbol(symbol)) {
     res.status(400).json({
@@ -39,14 +40,25 @@ export async function getSupportResistanceEndpoint(req: Request, res: Response):
     return;
   }
 
+  let limit: number | undefined;
+  if (limitRaw !== undefined) {
+    const parsed = Number(limitRaw);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 500) {
+      res.status(400).json({ error: 'limit must be an integer between 1 and 500.' });
+      return;
+    }
+    limit = parsed;
+  }
+
   try {
-    const { candles } = await getValidatedCandles(symbol, timeframe);
+    const { candles } = await getValidatedCandles(symbol, timeframe, { limit });
     const result = getSupportResistance(candles, { swingWindow });
     res.status(200).json({
       symbol,
       timeframe,
       supports: result.supports,
       resistances: result.resistances,
+      tested: result.tested,
     });
   } catch (err) {
     logger.error('Failed to compute support/resistance', {

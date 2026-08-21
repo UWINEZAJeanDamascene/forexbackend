@@ -37,6 +37,7 @@ export interface EnvConfig {
   nodeEnv: 'development' | 'production' | 'test';
   databaseUrl: string | undefined;
   twelveDataApiKey: string | undefined;
+  finnhubApiKey: string | undefined;
   aiApiKey: string | undefined;
   aiModel: string | undefined;
 }
@@ -48,6 +49,7 @@ export function getEnv(): EnvConfig {
     nodeEnv: (process.env.NODE_ENV as EnvConfig['nodeEnv']) || 'development',
     databaseUrl: process.env.DATABASE_URL || undefined,
     twelveDataApiKey: process.env.TWELVE_DATA_API_KEY || undefined,
+    finnhubApiKey: process.env.FINNHUB_API_KEY || undefined,
     aiApiKey: process.env.AI_API_KEY || undefined,
     aiModel: process.env.AI_MODEL || undefined,
   };
@@ -61,6 +63,7 @@ export function getEnv(): EnvConfig {
  */
 const REQUIRED_FROM_PHASE: Record<string, keyof EnvConfig> = {
   'Phase 3 (market data provider)': 'twelveDataApiKey',
+  'Phase 3 (market data provider - finnhub fallback)': 'finnhubApiKey',
   'Phase 16 (AI layer)': 'aiApiKey',
   'Phase 19 (database/history)': 'databaseUrl',
 };
