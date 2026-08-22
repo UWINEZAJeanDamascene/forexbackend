@@ -51,7 +51,7 @@ export async function getSupportResistanceEndpoint(req: Request, res: Response):
   }
 
   try {
-    const { candles } = await getValidatedCandles(symbol, timeframe, { limit });
+    const { analysisCandles: candles } = await getValidatedCandles(symbol, timeframe, { limit });
     const result = getSupportResistance(candles, { swingWindow });
     res.status(200).json({
       symbol,

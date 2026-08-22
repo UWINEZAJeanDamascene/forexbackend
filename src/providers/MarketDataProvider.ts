@@ -39,6 +39,9 @@ export interface MarketDataProvider {
    * a given instrument class (e.g. Finnhub free tier has no forex data).
    */
   readonly supportsForex?: boolean;
+
+  /** Metadata for the most recent request, when the provider can expose it. */
+  getLastFetchMetadata?: () => { provider: string; fallbackUsed: boolean; fallbackFrom?: string; failureKinds?: string[] };
 }
 
 /**

@@ -5,6 +5,8 @@ import {
   SupportResistanceResponse,
   DetectedSetup,
 } from '../../shared/types';
+import { MomentumAnalysisResult } from '../../shared/types/momentumAnalysis';
+import { MultiTimeframeAnalysis } from '../../shared/types/multiTimeframeAnalysis';
 import {
   RiskAnalysisResult,
   NearbyLevel,
@@ -30,6 +32,8 @@ export function computeRiskAnalysis(params: {
   currentPrice: number;
   accountSize?: number;
   maxRiskPercent?: number;
+  momentum?: MomentumAnalysisResult;
+  multiTimeframe?: MultiTimeframeAnalysis;
 }): RiskAnalysisResult {
   const atr = params.volatility.currentAtr;
   const volatilityContext = buildVolatilityContext(params.volatility);
@@ -50,6 +54,7 @@ export function computeRiskAnalysis(params: {
     nearbyResistance,
     invalidationCandidates
   );
+  const tradeQuality = assessTradeQuality(params.trend, params.structure, params.setups, riskRewardScenarios, params.volatility, params.momentum, params.multiTimeframe);
 
   let positionSizing: PositionSizingResult | null = null;
   let positionSizingInput: { accountSize: number; maxRiskPercent: number } | null = null;
@@ -79,6 +84,8 @@ export function computeRiskAnalysis(params: {
     volatilityContext,
     invalidationCandidates,
     riskRewardScenarios,
+    tradeQuality: tradeQuality.quality,
+    tradeQualityReasons: tradeQuality.reasons,
     positionSizing,
     positionSizingInput,
     thresholds: {
@@ -88,6 +95,36 @@ export function computeRiskAnalysis(params: {
     disclaimer: 'This reflects calculated distances between price and technical levels. It is not a probability of profit, a guaranteed outcome, or trading advice.',
     analyzedAt: new Date().toISOString(),
   };
+}
+
+function assessTradeQuality(
+  trend: TrendAnalysisResult,
+  structure: MarketStructureResult,
+  setups: DetectedSetup[],
+  scenarios: RiskRewardScenario[],
+  volatility: VolatilityAnalysisResult,
+  momentum: MomentumAnalysisResult | undefined,
+  multiTimeframe: MultiTimeframeAnalysis | undefined
+): { quality: 'wait' | 'low' | 'moderate' | 'high'; reasons: string[] } {
+  const reasons: string[] = [];
+  const bestRatio = scenarios.reduce((best, scenario) => Math.max(best, Number(scenario.ratio)), 0);
+  if (trend.trend === 'neutral') reasons.push('Trend is neutral; directional evidence is not aligned.');
+  if (structure.trend === 'range') reasons.push('Market structure is ranging, not a confirmed directional trend.');
+  if (setups.length === 0) reasons.push('No setup passed the minimum evidence conditions.');
+  if (bestRatio < 1) reasons.push('All calculated reward/risk scenarios are below 1.0.');
+  else if (bestRatio < 1.5) reasons.push(`Best technical reward/risk is ${bestRatio.toFixed(2)}, below the 1.50 review threshold.`);
+  if (volatility.bandDisagreement) reasons.push('ATR and Bollinger width disagree on the current volatility regime.');
+  if (momentum?.counterTrend) reasons.push(`Momentum is counter-trend (${momentum.momentum} versus ${structure.trend} market structure).`);
+  if (momentum?.divergence) reasons.push(`${momentum.divergence} momentum divergence is present.`);
+  if (multiTimeframe && (multiTimeframe.alignment === 'mixed' || multiTimeframe.alignment === 'insufficient_data')) reasons.push(`Multi-timeframe alignment is ${multiTimeframe.alignment.replace('_', ' ')}.`);
+  if (multiTimeframe && trend.trend !== 'neutral' && !multiTimeframe.alignment.includes(trend.trend)) reasons.push(`Higher/current/lower timeframe evidence does not confirm the ${trend.trend} direction.`);
+
+  if (reasons.some((reason) => reason.includes('neutral') || reason.includes('No setup') || reason.includes('below 1.0') || reason.includes('counter-trend') || reason.includes('divergence') || reason.includes('alignment is mixed') || reason.includes('does not confirm'))) {
+    return { quality: 'wait', reasons };
+  }
+  if (reasons.length > 0) return { quality: 'low', reasons };
+  if (bestRatio < 2) return { quality: 'moderate', reasons: ['Technical conditions are present but not strongly asymmetric.'] };
+  return { quality: 'high', reasons: ['Technical conditions and calculated asymmetry are aligned.'] };
 }
 
 function buildVolatilityContext(volatility: VolatilityAnalysisResult): VolatilityContext {
@@ -298,26 +335,14 @@ function buildRiskRewardScenarios(
 
   if (invalidationCandidates.length === 0) return scenarios;
 
-  let bullishInvalidation = invalidationCandidates.find((c) => c.price < currentPrice);
-  let bearishInvalidation = invalidationCandidates.find((c) => c.price > currentPrice);
+  const bullishInvalidation = invalidationCandidates
+    .filter((candidate) => candidate.price < currentPrice)
+    .sort((a, b) => Math.abs(currentPrice - a.price) - Math.abs(currentPrice - b.price))[0];
+  const bearishInvalidation = invalidationCandidates
+    .filter((candidate) => candidate.price > currentPrice)
+    .sort((a, b) => Math.abs(currentPrice - a.price) - Math.abs(currentPrice - b.price))[0];
 
-  if (!bullishInvalidation) {
-    bullishInvalidation = invalidationCandidates[0];
-    console.warn(`[risk] No bullish invalidation below current price ${currentPrice}. Using closest: ${bullishInvalidation.price}`);
-  }
-  if (!bearishInvalidation) {
-    bearishInvalidation = invalidationCandidates[0];
-    console.warn(`[risk] No bearish invalidation above current price ${currentPrice}. Using closest: ${bearishInvalidation.price}`);
-  }
-
-  if (bullishInvalidation.price >= currentPrice) {
-    console.warn(`[risk] VALIDATION: bullish invalidation ${bullishInvalidation.price} is NOT below current price ${currentPrice}`);
-  }
-  if (bearishInvalidation.price <= currentPrice) {
-    console.warn(`[risk] VALIDATION: bearish invalidation ${bearishInvalidation.price} is NOT above current price ${currentPrice}`);
-  }
-
-  if (nearbyResistance && nearbyResistance.price > currentPrice) {
+  if (nearbyResistance && nearbyResistance.price > currentPrice && bullishInvalidation) {
     const targetDistance = nearbyResistance.price - currentPrice;
     const invalidationDistance = Math.abs(currentPrice - bullishInvalidation.price);
     const ratio = invalidationDistance > 0 ? (targetDistance / invalidationDistance).toFixed(2) : '0.00';
@@ -338,7 +363,7 @@ function buildRiskRewardScenarios(
     });
   }
 
-  if (nearbySupport && nearbySupport.price < currentPrice) {
+  if (nearbySupport && nearbySupport.price < currentPrice && bearishInvalidation) {
     const targetDistance = currentPrice - nearbySupport.price;
     const invalidationDistance = Math.abs(currentPrice - bearishInvalidation.price);
     const ratio = invalidationDistance > 0 ? (targetDistance / invalidationDistance).toFixed(2) : '0.00';

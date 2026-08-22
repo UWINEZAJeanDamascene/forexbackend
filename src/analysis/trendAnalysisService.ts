@@ -1,5 +1,5 @@
 import { Candle } from '../../shared/types/market';
-import { getValidatedCandles } from '../services/marketDataService';
+import { DEFAULT_ANALYSIS_CANDLE_LIMIT, getValidatedCandles } from '../services/marketDataService';
 import { computeIndicators } from './indicatorService';
 import { getMarketStructure } from './marketStructureService';
 import { analyzeTrend } from './trendAnalysisEngine';
@@ -23,12 +23,19 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
-function cacheKey(symbol: Symbol, timeframe: Timeframe): string {
-  return `${symbol}:${timeframe}`;
+function cacheKey(
+  symbol: Symbol,
+  timeframe: Timeframe,
+  options: GetTrendOptions,
+  candles: Candle[]
+): string {
+  const lastCandle = candles[candles.length - 1];
+  const snapshot = lastCandle ? `${candles.length}:${lastCandle.timestamp}` : 'empty';
+  return `${symbol}:${timeframe}:${options.limit ?? 'default'}:${options.swingWindow ?? 2}:${snapshot}`;
 }
 
-function getCached(symbol: Symbol, timeframe: Timeframe): TrendResponse | null {
-  const key = cacheKey(symbol, timeframe);
+function getCached(symbol: Symbol, timeframe: Timeframe, options: GetTrendOptions, candles: Candle[]): TrendResponse | null {
+  const key = cacheKey(symbol, timeframe, options, candles);
   const entry = cache.get(key);
   if (!entry) return null;
   if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
@@ -38,8 +45,8 @@ function getCached(symbol: Symbol, timeframe: Timeframe): TrendResponse | null {
   return entry.data;
 }
 
-function setCache(symbol: Symbol, timeframe: Timeframe, data: TrendResponse): void {
-  const key = cacheKey(symbol, timeframe);
+function setCache(symbol: Symbol, timeframe: Timeframe, options: GetTrendOptions, candles: Candle[], data: TrendResponse): void {
+  const key = cacheKey(symbol, timeframe, options, candles);
   cache.set(key, { timestamp: Date.now(), data });
 }
 
@@ -48,12 +55,18 @@ export function clearTrendAnalysisCache(): void {
 }
 
 export async function getTrendAnalysis(symbol: string, timeframe: string, options: GetTrendOptions = {}): Promise<TrendResponse> {
-  const cached = getCached(symbol as Symbol, timeframe as Timeframe);
+  // Fetch the validated closed-candle snapshot before consulting the analysis
+  // cache. This makes the cache revision-sensitive: a new candle, a changed
+  // lookback, or a changed swing window cannot reuse an older trend result.
+  const analysisLimit = options.limit ?? DEFAULT_ANALYSIS_CANDLE_LIMIT;
+  const effectiveOptions = { ...options, limit: analysisLimit };
+  const validated = await getValidatedCandles(symbol, timeframe, { limit: analysisLimit });
+  const candles = validated.analysisCandles ?? validated.candles;
+  const cached = getCached(symbol as Symbol, timeframe as Timeframe, effectiveOptions, candles);
   if (cached) {
     return cached;
   }
 
-  const { candles } = await getValidatedCandles(symbol, timeframe, { limit: options.limit });
   const indicators = computeIndicators(candles, symbol, timeframe);
   const structureResult = getMarketStructure(candles, options);
   const trend = analyzeTrend(candles, indicators.indicators, structureResult.structure);
@@ -64,6 +77,6 @@ export async function getTrendAnalysis(symbol: string, timeframe: string, option
     trend,
   };
 
-  setCache(symbol as Symbol, timeframe as Timeframe, result);
+  setCache(symbol as Symbol, timeframe as Timeframe, effectiveOptions, candles, result);
   return result;
 }

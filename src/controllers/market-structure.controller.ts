@@ -51,7 +51,7 @@ export async function getMarketStructureEndpoint(req: Request, res: Response): P
   }
 
   try {
-    const { candles } = await getValidatedCandles(symbol, timeframe, { limit });
+    const { analysisCandles: candles } = await getValidatedCandles(symbol, timeframe, { limit });
     const result = getMarketStructure(candles, { swingWindow });
     res.status(200).json({
       symbol,

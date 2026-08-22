@@ -174,6 +174,17 @@ describe('analyzeMultiTimeframe', () => {
     expect(result.lowerTimeframe?.trend).toBe('bearish');
   });
 
+  it('returns aligned_neutral when all available timeframes are neutral', async () => {
+    mockedGetTrendAnalysis
+      .mockReturnValueOnce(makeTrendResponse('neutral', 0))
+      .mockReturnValueOnce(makeTrendResponse('neutral', 22))
+      .mockReturnValueOnce(makeTrendResponse('neutral', 16));
+
+    const result = await analyzeMultiTimeframe('EUR/USD', '1H');
+
+    expect(result.alignment).toBe('aligned_neutral');
+  });
+
   it('returns insufficient_data when one timeframe fetch fails', async () => {
     mockedGetTrendAnalysis.mockRejectedValue(new Error('Provider error'));
 

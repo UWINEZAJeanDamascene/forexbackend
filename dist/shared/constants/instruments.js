@@ -20,7 +20,7 @@ exports.ALL_SYMBOLS = [
     'XAU/USD',
 ];
 /** All spec instruments are enabled. */
-exports.ENABLED_SYMBOLS = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'GBP/JPY', 'EUR/JPY', 'USD/CHF', 'AUD/USD', 'USD/CAD', 'NZD/USD', 'XAU/USD'];
+exports.ENABLED_SYMBOLS = [...exports.ALL_SYMBOLS];
 exports.ALL_TIMEFRAMES = ['5m', '15m', '30m', '1H', '4H', '1D'];
 /** Spec says: start with 1H and 4H only. Now extended to include 5m, 15m, 30m. */
 exports.ENABLED_TIMEFRAMES = ['5m', '15m', '30m', '1H', '4H'];

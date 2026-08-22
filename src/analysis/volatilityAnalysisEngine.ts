@@ -29,6 +29,7 @@ export function analyzeVolatility(
       bandWidth: 0,
       bandWidthPercentile: 0,
       bandDisagreement: false,
+      regime: 'mixed',
       explanation: 'Insufficient data for volatility analysis.',
       dataQuality: {
         sufficient: false,
@@ -51,6 +52,7 @@ export function analyzeVolatility(
       bandWidth: 0,
       bandWidthPercentile: 0,
       bandDisagreement: false,
+      regime: 'mixed',
       explanation: 'ATR is zero or negative; volatility cannot be assessed.',
       dataQuality: {
         sufficient: true,
@@ -77,6 +79,7 @@ export function analyzeVolatility(
     : 0;
 
   const bandDisagreement = bandWidth > 0 ? detectBandDisagreement(atrPercentile, bandWidthPercentile) : false;
+  const regime = deriveRegime(atrPercentile, bandWidthPercentile, bandDisagreement);
 
   let classification: VolatilityClassification;
   if (atrPercentile < PERCENTILE_LOW_THRESHOLD) {
@@ -88,7 +91,7 @@ export function analyzeVolatility(
   }
 
   const score = atrPercentile;
-  const explanation = generateExplanation(classification, currentAtr, averageAtr, atrPercentile, atrRatio, bandWidth, bandWidthPercentile, bandDisagreement, rollingBaseline.count);
+  const explanation = generateExplanation(classification, currentAtr, averageAtr, atrPercentile, atrRatio, bandWidth, bandWidthPercentile, bandDisagreement, rollingBaseline.count, regime);
 
   return {
     classification,
@@ -99,6 +102,7 @@ export function analyzeVolatility(
     bandWidth,
     bandWidthPercentile,
     bandDisagreement,
+    regime,
     explanation,
     dataQuality: {
       sufficient: true,
@@ -106,6 +110,14 @@ export function analyzeVolatility(
       minimumRequired: MIN_CANDLES,
     },
   };
+}
+
+function deriveRegime(atrPercentile: number, bandWidthPercentile: number, disagreement: boolean): VolatilityAnalysisResult['regime'] {
+  if (disagreement && atrPercentile >= 70 && bandWidthPercentile <= 40) return 'elevated_contracting';
+  if (disagreement) return 'mixed';
+  if (atrPercentile <= 30 && bandWidthPercentile <= 30) return 'compressed';
+  if (atrPercentile >= 70 && bandWidthPercentile >= 70) return 'expanding';
+  return 'stable';
 }
 
 interface RollingBaseline {
@@ -182,9 +194,11 @@ function generateExplanation(
   bandWidth: number,
   bandWidthPercentile: number,
   bandDisagreement: boolean,
-  baselineCount: number
+  baselineCount: number,
+  regime: VolatilityAnalysisResult['regime']
 ): string {
   const explainer = VOLATILITY_EXPLAINERS[classification];
+  const regimePrefix = `Regime is ${regime.replace('_', ' ')}. `;
 
   let narrative = `ATR is ${currentAtr.toFixed(4)}, at the ${atrPercentile}th percentile of its ${baselineCount > 0 ? `${baselineCount}-period` : 'rolling'} history (${Math.round(atrRatio * 100)}% of average) — volatility is ${classification} (below ${PERCENTILE_LOW_THRESHOLD}th percentile = low, ${PERCENTILE_HIGH_THRESHOLD}th+ = high).`;
 
@@ -197,5 +211,5 @@ function generateExplanation(
     narrative += ' ATR and Bollinger Band width are giving mixed signals — volatility may be shifting unevenly.';
   }
 
-  return `${explainer} ${narrative}`;
+  return `${explainer} ${regimePrefix}${narrative}`;
 }

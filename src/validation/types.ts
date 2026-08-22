@@ -5,7 +5,8 @@ export type ValidationIssueType =
   | 'DUPLICATE_TIMESTAMP'
   | 'OUT_OF_ORDER_TIMESTAMP'
   | 'MISSING_CANDLE_GAP'
-  | 'INSUFFICIENT_CANDLE_COUNT';
+  | 'INSUFFICIENT_CANDLE_COUNT'
+  | 'FUTURE_CANDLE_TIMESTAMP';
 
 export type ValidationSeverity = 'warning' | 'error';
 

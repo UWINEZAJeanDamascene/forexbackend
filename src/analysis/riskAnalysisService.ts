@@ -5,6 +5,8 @@ import { getMarketStructure } from './marketStructureService';
 import { getVolatilityAnalysis } from './volatilityAnalysisService';
 import { getSupportResistance } from './supportResistanceService';
 import { getSetupDetection } from './setupDetectionService';
+import { getMomentumAnalysis } from './momentumAnalysisService';
+import { analyzeMultiTimeframe } from './multiTimeframeAnalysisEngine';
 import { getValidatedCandles } from '../services/marketDataService';
 import { computeRiskAnalysis } from './riskAnalysisEngine';
 import { createLogger } from '../utils/logger';
@@ -13,13 +15,15 @@ const logger = createLogger('riskAnalysis');
 
 export async function getRiskAnalysis(symbol: Symbol, timeframe: Timeframe, request?: RiskAnalysisRequest): Promise<RiskResponse> {
   try {
-    const { candles } = await getValidatedCandles(symbol, timeframe, { limit: 500 });
+    const { analysisCandles: candles } = await getValidatedCandles(symbol, timeframe, { limit: 500 });
 
-    const [trend, volatility, sr, setups] = await Promise.all([
+    const [trend, volatility, sr, setups, momentum, multiTimeframe] = await Promise.all([
       getTrendAnalysis(symbol, timeframe, {}),
       getVolatilityAnalysis(symbol, timeframe),
       getSupportResistance(candles, { swingWindow: 2 }),
       getSetupDetection(symbol, timeframe),
+      getMomentumAnalysis(symbol, timeframe),
+      analyzeMultiTimeframe(symbol, timeframe),
     ]);
 
     const structure = getMarketStructure(candles, { swingWindow: 2 });
@@ -31,6 +35,8 @@ export async function getRiskAnalysis(symbol: Symbol, timeframe: Timeframe, requ
       volatility: volatility.volatility,
       supportResistance: sr,
       setups: setups.setups,
+      momentum: momentum.momentum,
+      multiTimeframe,
       currentPrice,
       accountSize: request?.accountSize,
       maxRiskPercent: request?.maxRiskPercent,

@@ -1,12 +1,13 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "Node16",
+    "moduleResolution": "Node16",
     "lib": ["ES2022"],
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": "..",
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@shared/*": ["../shared/*"]
     },

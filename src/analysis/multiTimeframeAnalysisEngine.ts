@@ -97,7 +97,7 @@ function getCachedAllowStale(symbol: Symbol, timeframe: Timeframe): TimeframeSna
 export function classifyAlignment(
   higher: TimeframeSnapshot | null,
   analysis: TimeframeSnapshot,
-  lower: TimeframeSnapshot | null
+  lower: TimeframeSnapshot | null = null
 ): MultiTimeframeAlignment {
   if (analysis.status !== 'ok') {
     return 'insufficient_data';
@@ -111,10 +111,17 @@ export function classifyAlignment(
 
   const allBullish = snapshots.every((s) => s.trend === 'bullish');
   const allBearish = snapshots.every((s) => s.trend === 'bearish');
-  const allSameDirection = allBullish || allBearish;
+  const allNeutral = snapshots.every((s) => s.trend === 'neutral');
+
+  // A lower-timeframe counter-move is classified as a pullback when the
+  // higher and analysis timeframes agree. It is not the same as a directional
+  // conflict at the decision timeframe.
+  if (higher?.trend === 'bullish' && analysis.trend === 'bullish' && lower?.trend === 'bearish') return 'aligned_bullish';
+  if (higher?.trend === 'bearish' && analysis.trend === 'bearish' && lower?.trend === 'bullish') return 'aligned_bearish';
 
   if (allBullish) return 'aligned_bullish';
   if (allBearish) return 'aligned_bearish';
+  if (allNeutral) return 'aligned_neutral';
   if (snapshots.length >= 2 && snapshots[0].trend === snapshots[1].trend && snapshots[1].trend !== 'neutral') {
     return snapshots[1].trend === 'bullish' ? 'partially_aligned_bullish' : 'partially_aligned_bearish';
   }

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { ENABLED_SYMBOLS, ENABLED_TIMEFRAMES, Symbol, Timeframe } from '../../../shared/constants/instruments';
+import { ENABLED_SYMBOLS, ENABLED_TIMEFRAMES, Symbol, Timeframe, timeframeToMs } from '../../../shared/constants/instruments';
 import { getValidatedCandles } from '../services/marketDataService';
 import { DataValidationError } from '../validation';
 import { MarketDataError } from '../providers/MarketDataProvider';
@@ -93,11 +93,28 @@ export async function getCandles(req: Request, res: Response): Promise<void> {
   }
 
   try {
-    const { candles, issues } = await getValidatedCandles(symbol, timeframe, { limit });
+    const { candles, issues, source, fetchedAt, provider, fallbackUsed, fallbackFrom, providerFailureKinds } = await getValidatedCandles(symbol, timeframe, { limit });
+    const lastCandleAt = candles.length > 0 ? candles[candles.length - 1].timestamp : null;
+    const lastCandleMs = lastCandleAt ? new Date(lastCandleAt).getTime() : NaN;
+    const now = Date.now();
+    const ageMs = Number.isFinite(lastCandleMs) ? now - lastCandleMs : null;
+    const timeframeMs = timeframeToMs(timeframe);
+    const timestampStatus = ageMs === null ? 'unknown' : ageMs < -60_000 ? 'future' : ageMs > timeframeMs * 2 ? 'stale' : 'fresh';
     res.status(200).json({
       symbol,
       timeframe,
       candles,
+      source,
+      provider,
+      fallbackUsed,
+      fallbackFrom: fallbackFrom ?? null,
+      providerFailureKinds,
+      fetchedAt,
+      lastCandleAt,
+      lastCandleAgeMs: ageMs,
+      latestCandleClosed: ageMs !== null ? ageMs >= timeframeMs : null,
+      timestampTimezone: 'UTC',
+      timestampStatus,
       // Surface non-fatal issues (e.g. gap warnings) so the UI can show a
       // subtle data-quality note without blocking the chart.
       warnings: issues.filter((i) => i.severity === 'warning').map((i) => i.message),

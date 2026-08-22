@@ -1,6 +1,6 @@
 import { Symbol, Timeframe } from '../../../shared/constants/instruments';
 import { SetupContext, SetupDetectionResponse } from '../../../shared/types/setupDetection';
-import { getValidatedCandles } from '../services/marketDataService';
+import { DEFAULT_ANALYSIS_CANDLE_LIMIT, getValidatedCandles } from '../services/marketDataService';
 import { getTrendAnalysis } from './trendAnalysisService';
 import { getMarketStructure } from './marketStructureService';
 import { getMomentumAnalysis } from './momentumAnalysisService';
@@ -10,7 +10,7 @@ import { analyzeMultiTimeframe, TIMEFRAME_HIERARCHY } from './multiTimeframeAnal
 import { detectSetups } from './setupDetectionEngine';
 
 export async function getSetupDetection(symbol: Symbol, timeframe: Timeframe): Promise<SetupDetectionResponse> {
-  const { candles } = await getValidatedCandles(symbol, timeframe);
+  const { analysisCandles: candles } = await getValidatedCandles(symbol, timeframe, { limit: DEFAULT_ANALYSIS_CANDLE_LIMIT });
 
   const [trendResponse, structureResponse, momentumResponse, volatilityResponse, srResponse, mtfResponse] = await Promise.all([
     getTrendAnalysis(symbol, timeframe, {}),

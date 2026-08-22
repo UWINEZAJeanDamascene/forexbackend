@@ -6,7 +6,6 @@ export interface TrendFactor {
     score: number;
     explanation: string;
 }
-/** Per-EMA price position for chart-aligned display (no majority vote bias). */
 export interface PriceVsEmaBreakdown {
     vsEma20: TrendDirection | null;
     vsEma50: TrendDirection | null;
@@ -25,7 +24,6 @@ export interface TrendAnalysisResult {
         priceVsEma: TrendFactor;
         recentHighsLows: TrendFactor;
     };
-    /** Explicit price-vs-each-EMA so UI matches what traders see on the chart. */
     priceVsEmaBreakdown: PriceVsEmaBreakdown;
     currentPrice: number;
     ema: {

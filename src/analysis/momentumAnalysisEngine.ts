@@ -194,10 +194,12 @@ function scoreMacd(
 
   const componentScore = histogramScore * 0.6 + slopeScore * 0.4 + crossBonus;
   const scaledScore = Math.round(Math.max(Math.min(componentScore, 1), -1) * 100);
+  const roundedHistogram = Number(currentHistogram.toFixed(4));
+  const histogramText = Object.is(roundedHistogram, -0) ? '0.0000' : roundedHistogram.toFixed(4);
 
   return {
     score: scaledScore,
-    explanation: `MACD histogram is ${currentHistogram.toFixed(4)} and ${currentHistogram > priorHistogram ? 'expanding' : priorHistogram !== null ? 'contracting' : 'flat'}. ${crossBonus !== 0 ? (crossBonus > 0 ? 'Fresh bullish cross detected.' : 'Fresh bearish cross detected.') : 'No recent crossover.'}`,
+    explanation: `MACD histogram is ${histogramText} and ${priorHistogram !== null && currentHistogram > priorHistogram ? 'expanding' : priorHistogram !== null ? 'contracting' : 'flat'}. ${crossBonus !== 0 ? (crossBonus > 0 ? 'Fresh bullish cross detected.' : 'Fresh bearish cross detected.') : 'No recent crossover.'}`,
     raw: {
       currentHistogram,
       priorHistogram,

@@ -1,4 +1,5 @@
 export type VolatilityClassification = 'low' | 'normal' | 'high';
+export type VolatilityRegime = 'compressed' | 'stable' | 'expanding' | 'elevated_contracting' | 'mixed';
 export type VolatilityStrength = 'weak' | 'moderate' | 'strong';
 export interface VolatilityAnalysisResult {
     classification: VolatilityClassification;
@@ -9,6 +10,7 @@ export interface VolatilityAnalysisResult {
     bandWidth: number;
     bandWidthPercentile: number;
     bandDisagreement: boolean;
+    regime: VolatilityRegime;
     explanation: string;
     dataQuality: {
         sufficient: boolean;

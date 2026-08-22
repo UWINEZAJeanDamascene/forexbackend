@@ -1,5 +1,5 @@
 import { Candle } from '../../shared/types/market';
-import { getValidatedCandles } from '../services/marketDataService';
+import { DEFAULT_ANALYSIS_CANDLE_LIMIT, getValidatedCandles } from '../services/marketDataService';
 import { computeIndicators } from './indicatorService';
 import { getMarketStructure } from './marketStructureService';
 import { analyzeMomentum } from './momentumAnalysisEngine';
@@ -17,12 +17,13 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
-function cacheKey(symbol: string, timeframe: string): string {
-  return `${symbol}:${timeframe}`;
+function cacheKey(symbol: string, timeframe: string, limit: number, candles: Candle[]): string {
+  const last = candles[candles.length - 1];
+  return `${symbol}:${timeframe}:${limit}:${candles.length}:${last?.timestamp ?? 'empty'}`;
 }
 
-function getCached(symbol: string, timeframe: string): MomentumResponse | null {
-  const key = cacheKey(symbol, timeframe);
+function getCached(symbol: string, timeframe: string, limit: number, candles: Candle[]): MomentumResponse | null {
+  const key = cacheKey(symbol, timeframe, limit, candles);
   const entry = cache.get(key);
   if (!entry) return null;
   if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
@@ -32,8 +33,8 @@ function getCached(symbol: string, timeframe: string): MomentumResponse | null {
   return entry.data;
 }
 
-function setCache(symbol: string, timeframe: string, data: MomentumResponse): void {
-  const key = cacheKey(symbol, timeframe);
+function setCache(symbol: string, timeframe: string, limit: number, candles: Candle[], data: MomentumResponse): void {
+  const key = cacheKey(symbol, timeframe, limit, candles);
   cache.set(key, { timestamp: Date.now(), data });
 }
 
@@ -46,12 +47,13 @@ export function clearMomentumAnalysisCache(): void {
 }
 
 export async function getMomentumAnalysis(symbol: string, timeframe: string, options: GetMomentumOptions = {}): Promise<MomentumResponse> {
-  const cached = getCached(symbol, timeframe);
+  const limit = options.limit ?? DEFAULT_ANALYSIS_CANDLE_LIMIT;
+  const { analysisCandles: candles } = await getValidatedCandles(symbol, timeframe, { limit });
+  const cached = getCached(symbol, timeframe, limit, candles);
   if (cached) {
     return cached;
   }
 
-  const { candles } = await getValidatedCandles(symbol, timeframe, { limit: options.limit });
   const indicators = computeIndicators(candles, symbol, timeframe);
   const structureResult = getMarketStructure(candles, {});
   const momentum = analyzeMomentum(candles, indicators.indicators, structureResult.structure);
@@ -62,6 +64,6 @@ export async function getMomentumAnalysis(symbol: string, timeframe: string, opt
     momentum,
   };
 
-  setCache(symbol, timeframe, result);
+  setCache(symbol, timeframe, limit, candles, result);
   return result;
 }

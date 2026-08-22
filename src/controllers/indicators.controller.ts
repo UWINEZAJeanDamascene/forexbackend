@@ -52,7 +52,8 @@ export async function getIndicators(req: Request, res: Response): Promise<void> 
   }
 
   try {
-    const { candles } = await getValidatedCandles(symbol, timeframe, { limit });
+    const validated = await getValidatedCandles(symbol, timeframe, { limit });
+    const candles = validated.analysisCandles ?? validated.candles;
     const result = computeIndicators(candles, symbol, timeframe);
     res.status(200).json(result);
   } catch (err) {

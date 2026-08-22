@@ -9,6 +9,8 @@ function isForexSymbol(symbol: Symbol): boolean {
 export class FallbackProvider implements MarketDataProvider {
   readonly name = 'fallback';
 
+  private lastFetchMetadata = { provider: 'unknown', fallbackUsed: false, fallbackFrom: undefined as string | undefined, failureKinds: [] as string[] };
+
   private readonly providers: MarketDataProvider[];
 
   constructor(providers: MarketDataProvider[]) {
@@ -40,6 +42,10 @@ export class FallbackProvider implements MarketDataProvider {
 
   readonly supportsForex = true;
 
+  getLastFetchMetadata() {
+    return this.lastFetchMetadata;
+  }
+
   async getQuote(symbol: Symbol): Promise<Quote> {
     return this.executeWithFallback((provider) => provider.getQuote(symbol), symbol);
   }
@@ -70,7 +76,14 @@ export class FallbackProvider implements MarketDataProvider {
       }
 
       try {
-        return await operation(provider);
+        const result = await operation(provider);
+        this.lastFetchMetadata = {
+          provider: provider.name,
+          fallbackUsed: errors.length > 0,
+          fallbackFrom: errors.length > 0 ? errors[0]?.provider : undefined,
+          failureKinds: errors.map((error) => error.kind),
+        };
+        return result;
       } catch (error) {
         if (error instanceof MarketDataError && this.isRetryable(error)) {
           errors.push(error);

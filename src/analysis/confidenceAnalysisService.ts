@@ -7,7 +7,7 @@ import { getVolatilityAnalysis } from './volatilityAnalysisService';
 import { getSupportResistance } from './supportResistanceService';
 import { getMultiTimeframeAnalysis } from './multiTimeframeAnalysisService';
 import { getSetupDetection } from './setupDetectionService';
-import { getValidatedCandles } from '../services/marketDataService';
+import { DEFAULT_ANALYSIS_CANDLE_LIMIT, getValidatedCandles } from '../services/marketDataService';
 import { computeConfidence } from './confidenceAnalysisEngine';
 import { createLogger } from '../utils/logger';
 
@@ -15,7 +15,7 @@ const logger = createLogger('confidenceAnalysis');
 
 export async function getConfidenceAnalysis(symbol: Symbol, timeframe: Timeframe): Promise<ConfidenceResponse> {
   try {
-    const { candles } = await getValidatedCandles(symbol, timeframe);
+    const { analysisCandles: candles } = await getValidatedCandles(symbol, timeframe, { limit: DEFAULT_ANALYSIS_CANDLE_LIMIT });
 
     const [trend, momentum, volatility, sr, mtf, setups] = await Promise.all([
       getTrendAnalysis(symbol, timeframe, {}),
