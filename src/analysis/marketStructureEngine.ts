@@ -73,7 +73,8 @@ export function detectMarketStructure(
 
   const trend = determineTrend(classifiedHighs, classifiedLows);
   const recentCounts = computeRecentSwingCounts(swingHighs, swingLows, 4);
-  const trendQualifier = determineTrendQualifier(trend, recentCounts);
+  const latestSwingEvent = getLatestSwingEvent(classifiedHighs.events, classifiedLows.events);
+  const trendQualifier = determineTrendQualifier(trend, recentCounts, latestSwingEvent?.type);
 
   const bosChochEvents = detectBosAndChoch(candles, swingHighs, swingLows, trend);
 
@@ -315,7 +316,8 @@ function computeRecentSwingCounts(
 
 function determineTrendQualifier(
   trend: MarketStructureTrend,
-  recent: RecentSwingCounts
+  recent: RecentSwingCounts,
+  latestEventType?: StructureEventType
 ): string | null {
   const recentBullish = recent.recentHigherHighs + recent.recentHigherLows;
   const recentBearish = recent.recentLowerHighs + recent.recentLowerLows;
@@ -323,10 +325,16 @@ function determineTrendQualifier(
 
   if (recentTotal === 0) return null;
 
-  if (trend === 'bullish' && recentBearish > recentBullish) {
+  const latestContradicts = trend === 'bullish'
+    ? latestEventType === 'lower_high' || latestEventType === 'lower_low'
+    : trend === 'bearish'
+      ? latestEventType === 'higher_high' || latestEventType === 'higher_low'
+      : false;
+
+  if (latestContradicts || (trend === 'bullish' && recentBearish > recentBullish)) {
     return 'weakening';
   }
-  if (trend === 'bearish' && recentBullish > recentBearish) {
+  if (trend === 'bearish' && (latestContradicts || recentBullish > recentBearish)) {
     return 'weakening';
   }
   if (trend === 'range' && recentBullish > recentBearish * 2 && recentBullish >= 2) {
@@ -337,6 +345,15 @@ function determineTrendQualifier(
   }
 
   return null;
+}
+
+function getLatestSwingEvent(
+  highEvents: StructureEvent[],
+  lowEvents: StructureEvent[],
+): StructureEvent | null {
+  return [...highEvents, ...lowEvents]
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+    .at(-1) ?? null;
 }
 
 function detectBosAndChoch(

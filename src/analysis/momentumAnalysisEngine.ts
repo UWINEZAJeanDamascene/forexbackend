@@ -9,7 +9,6 @@ const RSI_SLOPE_WEIGHT = 0.4;
 const MACD_WEIGHT = 0.35;
 const PRICE_MOVEMENT_WEIGHT = 0.3;
 const RSI_WEIGHT = 0.35;
-const TREND_REINFORCE_MULTIPLIER = 1.3;
 const TREND_DAMPEN_MULTIPLIER = 0.5;
 const OVERBOUGHT_THRESHOLD = 70;
 const OVERSOLD_THRESHOLD = 30;
@@ -71,9 +70,10 @@ export function analyzeMomentum(
     adjustmentFactor = TREND_DAMPEN_MULTIPLIER;
     adjustmentReason = 'counter-trend dampening';
   } else if (rawDirection === trendContext && trendContext !== 'neutral') {
-    adjustedScore = rawScore * TREND_REINFORCE_MULTIPLIER;
-    adjustmentFactor = TREND_REINFORCE_MULTIPLIER;
-    adjustmentReason = 'trend reinforcement';
+    // Do not amplify a weak momentum reading merely because it agrees with
+    // structure. Agreement is already visible in the component scores; an
+    // extra multiplier manufactured bullish labels on marginal evidence.
+    adjustmentReason = 'raw score retained; no directional reinforcement';
   }
 
   const clampedScore = Math.round(Math.max(Math.min(adjustedScore, 100), -100));
@@ -264,8 +264,8 @@ function classifyMomentum(score: number): MomentumDirection {
 function classifyMomentumWithLean(score: number): { direction: MomentumDirection; lean: string | null } {
   if (score >= 30) return { direction: 'bullish', lean: null };
   if (score <= -30) return { direction: 'bearish', lean: null };
-  if (score >= 10) return { direction: 'neutral', lean: 'leaning bullish' };
-  if (score <= -10) return { direction: 'neutral', lean: 'leaning bearish' };
+  if (score >= 10) return { direction: 'neutral', lean: 'mild bullish lean' };
+  if (score <= -10) return { direction: 'neutral', lean: 'mild bearish lean' };
   return { direction: 'neutral', lean: null };
 }
 

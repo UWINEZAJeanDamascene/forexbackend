@@ -16,6 +16,7 @@ export const TIMEFRAME_HIERARCHY: Record<Timeframe, { higher: Timeframe | null; 
 
 const MIN_CANDLES = 60;
 const CACHE_TTL_MS = 90_000;
+export const CANONICAL_TIMEFRAME_STACK: Timeframe[] = ['1D', '4H', '1H', '15m', '5m'];
 
 interface CacheEntry {
   timestamp: number;
@@ -59,6 +60,7 @@ async function fetchTimeframeTrend(symbol: Symbol, timeframe: Timeframe): Promis
       score: trendResponse.trend.score,
       strength: trendResponse.trend.strength,
       status: 'ok',
+      analyzedAt: trendResponse.trend.analyzedAt,
     };
 
     setCache(symbol, timeframe, snapshot);
@@ -180,7 +182,7 @@ export function generateExplanation(
   return parts.join(' ');
 }
 
-export async function analyzeMultiTimeframe(symbol: Symbol, analysisTimeframe: Timeframe): Promise<MultiTimeframeAnalysis> {
+export async function analyzeMultiTimeframe(symbol: Symbol, analysisTimeframe: Timeframe, includeStack = false): Promise<MultiTimeframeAnalysis> {
   if (!ENABLED_TIMEFRAMES.includes(analysisTimeframe)) {
     throw new Error(`Timeframe ${analysisTimeframe} is not enabled.`);
   }
@@ -199,9 +201,26 @@ export async function analyzeMultiTimeframe(symbol: Symbol, analysisTimeframe: T
 
   const [higher, analysis, lower] = await Promise.all([fetchHigher, fetchAnalysis, fetchLower]);
 
+  let timeframeStack: TimeframeSnapshot[] | undefined;
+  if (includeStack) {
+    const known = new Map<Timeframe, TimeframeSnapshot>();
+    for (const snapshot of [higher, analysis, lower]) {
+      if (snapshot) known.set(snapshot.timeframe, snapshot);
+    }
+    timeframeStack = await Promise.all(CANONICAL_TIMEFRAME_STACK.map(async (timeframe) => {
+      const existing = known.get(timeframe);
+      if (existing) return existing;
+      const cached = getCached(symbol, timeframe);
+      return cached ?? fetchTimeframeTrend(symbol, timeframe);
+    }));
+  }
+
   const alignment = classifyAlignment(higher, analysis, lower);
   const pattern = detectPattern(higher, analysis, lower);
   const explanation = generateExplanation(alignment, higher, analysis, lower, pattern);
+  const validSnapshots = (timeframeStack ?? [higher, analysis, lower])
+    .filter((snapshot): snapshot is TimeframeSnapshot => snapshot !== null && snapshot.status === 'ok');
+  const scores = validSnapshots.map((snapshot) => snapshot.score);
 
   if (BANNED_WORDS.test(explanation)) {
     logger.error('Banned word found in MTF explanation', { explanation });
@@ -214,7 +233,10 @@ export async function analyzeMultiTimeframe(symbol: Symbol, analysisTimeframe: T
     higherTimeframe: higher ?? null,
     analysis,
     lowerTimeframe: lower ?? null,
+    timeframeStack,
     alignment,
+    scoreRange: scores.length > 0 ? [Math.min(...scores), Math.max(...scores)] : undefined,
+    snapshotAt: new Date().toISOString(),
     possiblePattern: pattern,
     explanation,
   };

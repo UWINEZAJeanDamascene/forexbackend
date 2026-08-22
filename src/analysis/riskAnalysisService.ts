@@ -10,6 +10,7 @@ import { analyzeMultiTimeframe } from './multiTimeframeAnalysisEngine';
 import { getValidatedCandles } from '../services/marketDataService';
 import { computeRiskAnalysis } from './riskAnalysisEngine';
 import { createLogger } from '../utils/logger';
+import { getCachedQuote } from '../services/quoteService';
 
 const logger = createLogger('riskAnalysis');
 
@@ -29,6 +30,22 @@ export async function getRiskAnalysis(symbol: Symbol, timeframe: Timeframe, requ
     const structure = getMarketStructure(candles, { swingWindow: 2 });
     const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : 0;
 
+    let quoteToAccountRate: number | undefined;
+    if (request?.accountSize !== undefined && request.maxRiskPercent !== undefined) {
+      try {
+        quoteToAccountRate = await getQuoteToUsdRate(symbol);
+      } catch (conversionError) {
+        logger.warn('Position sizing skipped because quote-currency conversion is unavailable', {
+          symbol,
+          message: conversionError instanceof Error ? conversionError.message : String(conversionError),
+        });
+      }
+    }
+
+    const sizingInputs = quoteToAccountRate === undefined
+      ? { accountSize: undefined, maxRiskPercent: undefined }
+      : { accountSize: request?.accountSize, maxRiskPercent: request?.maxRiskPercent };
+
     const risk = computeRiskAnalysis({
       trend: trend.trend,
       structure: structure.structure,
@@ -38,8 +55,10 @@ export async function getRiskAnalysis(symbol: Symbol, timeframe: Timeframe, requ
       momentum: momentum.momentum,
       multiTimeframe,
       currentPrice,
-      accountSize: request?.accountSize,
-      maxRiskPercent: request?.maxRiskPercent,
+      accountSize: sizingInputs.accountSize,
+      maxRiskPercent: sizingInputs.maxRiskPercent,
+      quoteToAccountRate,
+      accountCurrency: 'USD',
     });
 
     return {
@@ -53,4 +72,14 @@ export async function getRiskAnalysis(symbol: Symbol, timeframe: Timeframe, requ
     });
     throw err;
   }
+}
+
+async function getQuoteToUsdRate(symbol: Symbol): Promise<number | undefined> {
+  const quoteCurrency = symbol.split('/')[1];
+  if (quoteCurrency === 'USD') return 1;
+
+  const conversionSymbol = `USD/${quoteCurrency}` as Symbol;
+  const quote = await getCachedQuote(conversionSymbol);
+  if (!Number.isFinite(quote.price) || quote.price <= 0) return undefined;
+  return 1 / quote.price;
 }

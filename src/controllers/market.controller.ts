@@ -132,3 +132,19 @@ export function getSymbols(_req: Request, res: Response): void {
 export function getTimeframes(_req: Request, res: Response): void {
   res.status(200).json({ timeframes: ENABLED_TIMEFRAMES });
 }
+
+/** GET /api/market/quote?symbol=USD/JPY */
+export async function getQuote(req: Request, res: Response): Promise<void> {
+  const symbol = String(req.query.symbol || '');
+  if (!isEnabledSymbol(symbol)) {
+    res.status(400).json({ error: `Symbol must be one of: ${ENABLED_SYMBOLS.join(', ')}.` });
+    return;
+  }
+
+  try {
+    const { getCachedQuote } = await import('../services/quoteService');
+    res.status(200).json(await getCachedQuote(symbol));
+  } catch (err) {
+    respondWithError(res, err);
+  }
+}

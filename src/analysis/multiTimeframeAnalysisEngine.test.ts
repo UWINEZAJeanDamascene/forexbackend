@@ -210,4 +210,21 @@ describe('analyzeMultiTimeframe', () => {
     expect(mockedGetTrendAnalysis).toHaveBeenCalledTimes(3);
     expect(mockedClearTrendAnalysisCache).not.toHaveBeenCalled();
   });
+
+  it('returns one canonical five-timeframe stack when requested', async () => {
+    mockedGetTrendAnalysis
+      .mockReturnValueOnce(makeTrendResponse('bearish', -17))
+      .mockReturnValueOnce(makeTrendResponse('neutral', -15))
+      .mockReturnValueOnce(makeTrendResponse('neutral', -1))
+      .mockReturnValueOnce(makeTrendResponse('neutral', 28))
+      .mockReturnValueOnce(makeTrendResponse('neutral', 27));
+
+    const result = await analyzeMultiTimeframe('EUR/USD', '1H', true);
+
+    expect(result.timeframeStack?.map((snapshot) => snapshot.timeframe)).toEqual(['1D', '4H', '1H', '15m', '5m']);
+    expect(result.timeframeStack?.every((snapshot) => snapshot.status === 'ok')).toBe(true);
+    expect(result.scoreRange).toEqual([-17, 28]);
+    expect(result.snapshotAt).toEqual(expect.any(String));
+    expect(result.timeframeStack?.every((snapshot) => snapshot.analyzedAt)).toBe(true);
+  });
 });

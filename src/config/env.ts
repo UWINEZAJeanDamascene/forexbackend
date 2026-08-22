@@ -39,7 +39,11 @@ export interface EnvConfig {
   twelveDataApiKey: string | undefined;
   finnhubApiKey: string | undefined;
   aiApiKey: string | undefined;
+  aiApiUrl: string | undefined;
   aiModel: string | undefined;
+  aiFallbackApiKey: string | undefined;
+  aiFallbackApiUrl: string | undefined;
+  aiFallbackModel: string | undefined;
 }
 
 export function getEnv(): EnvConfig {
@@ -51,7 +55,11 @@ export function getEnv(): EnvConfig {
     twelveDataApiKey: process.env.TWELVE_DATA_API_KEY || undefined,
     finnhubApiKey: process.env.FINNHUB_API_KEY || undefined,
     aiApiKey: process.env.AI_API_KEY || undefined,
+    aiApiUrl: process.env.AI_API_URL || undefined,
     aiModel: process.env.AI_MODEL || undefined,
+    aiFallbackApiKey: process.env.AI_FALLBACK_API_KEY || undefined,
+    aiFallbackApiUrl: process.env.AI_FALLBACK_API_URL || undefined,
+    aiFallbackModel: process.env.AI_FALLBACK_MODEL || undefined,
   };
 }
 
@@ -78,6 +86,7 @@ export function logEnvStatus(config: EnvConfig): void {
     // Never log the actual secret value - only whether it's present.
     console.log(`[env] ${key}: ${isSet ? 'set' : 'not set'} (required by ${phase})`);
   }
+  console.log(`[env] aiFallbackApiKey: ${config.aiFallbackApiKey ? 'set' : 'not set'} (optional fallback provider)`);
 }
 
 export const env = getEnv();

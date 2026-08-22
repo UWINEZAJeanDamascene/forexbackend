@@ -16,6 +16,7 @@ function isEnabledTimeframe(value: string): value is Timeframe {
 export async function getMultiTimeframeEndpoint(req: Request, res: Response): Promise<void> {
   const symbol = String(req.query.symbol || '');
   const timeframe = String(req.query.timeframe || '');
+  const includeStack = req.query.stack === 'true';
 
   if (!isEnabledSymbol(symbol)) {
     res.status(400).json({
@@ -32,7 +33,7 @@ export async function getMultiTimeframeEndpoint(req: Request, res: Response): Pr
   }
 
   try {
-    const result = await getMultiTimeframeAnalysis(symbol, timeframe);
+    const result = await getMultiTimeframeAnalysis(symbol, timeframe, includeStack);
     res.status(200).json(result);
   } catch (err) {
     logger.error('Failed to compute multi-timeframe analysis', {

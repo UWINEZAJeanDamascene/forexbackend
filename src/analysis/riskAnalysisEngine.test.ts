@@ -236,8 +236,75 @@ describe('computeRiskAnalysis', () => {
 
     expect(result.positionSizing).not.toBeNull();
     expect(result.positionSizing!.riskAmount).toBeCloseTo(500, 0);
-    expect(result.positionSizing!.basedOnInvalidation).toBeCloseTo(1.0980, 4);
+    expect(result.positionSizing!.basedOnInvalidation).toBeCloseTo(1.1000, 4);
     expect(result.positionSizing!.unusuallyHighRisk).toBe(false);
+  });
+
+  it('does not classify a tested zone overlapping current price as a nearby side level', () => {
+    const result = computeRiskAnalysis({
+      trend: makeTrend(),
+      structure: makeStructure(),
+      volatility: makeVolatility(),
+      supportResistance: makeSR({
+        supports: [],
+        resistances: [],
+        tested: [{ price: 1.1049, zoneLow: 1.1040, zoneHigh: 1.1060, type: 'tested', strength: 80, touches: 3, lastReactionTime: '' }],
+      }),
+      setups: makeSetups([]),
+      currentPrice: 1.1050,
+    });
+
+    expect(result.nearbySupport).toBeNull();
+    expect(result.nearbyResistance).toBeNull();
+  });
+
+  it('does not use a near-zero setup invalidation to inflate risk/reward', () => {
+    const result = computeRiskAnalysis({
+      trend: makeTrend(),
+      structure: makeStructure({ lastSwingLow: { type: 'low', timestamp: '2024-01-01T00:00:00.000Z', price: 1.0980, index: 0 } }),
+      volatility: makeVolatility({ currentAtr: 0.0060 }),
+      supportResistance: makeSR(),
+      setups: makeSetups([{
+        setup: 'Bullish Trend Continuation', direction: 'bullish', strength: 70,
+        conditionsMet: ['trend'], conditionsMissing: [], conditionsMetCount: 1, conditionsTotal: 1,
+        invalidationCondition: 'price falls back below 1.1049',
+      }]),
+      currentPrice: 1.1050,
+    });
+
+    const bullish = result.riskRewardScenarios.find((scenario) => scenario.direction === 'bullish');
+    expect(bullish).toBeDefined();
+    expect(bullish!.invalidation.price).toBeCloseTo(1.1000, 4);
+  });
+
+  it('uses quote-currency conversion consistently for JPY-quoted instruments', () => {
+    const result = computeRiskAnalysis({
+      trend: makeTrend({ symbol: 'GBP/JPY' }),
+      structure: makeStructure(),
+      volatility: makeVolatility({ currentAtr: 0.0100 }),
+      supportResistance: makeSR(),
+      setups: makeSetups([{
+        setup: 'Bullish Pullback',
+        direction: 'bullish',
+        strength: 60,
+        conditionsMet: ['support'],
+        conditionsMissing: [],
+        conditionsMetCount: 1,
+        conditionsTotal: 1,
+        invalidationCondition: 'price falls below 216.900',
+      }]),
+      currentPrice: 216.913,
+      accountSize: 2000,
+      maxRiskPercent: 2,
+      quoteToAccountRate: 0.00629,
+      accountCurrency: 'USD',
+    });
+
+    expect(result.positionSizing).not.toBeNull();
+    // 1.3 pips = 0.013 JPY; each unit risks 0.013 * 0.00629 USD.
+    expect(result.positionSizing!.riskDistanceInPips).toBeCloseTo(1.3, 1);
+    expect(result.positionSizing!.positionSizeUnits).toBeCloseTo(489000, -3);
+    expect(result.positionSizing!.positionSizeLots).toBeCloseTo(4.89, 2);
   });
 
   it('flags unusually high risk', () => {
@@ -253,6 +320,33 @@ describe('computeRiskAnalysis', () => {
     });
 
     expect(result.positionSizing!.unusuallyHighRisk).toBe(true);
+  });
+
+  it('does not calculate an oversized position from a sub-ATR invalidation', () => {
+    const result = computeRiskAnalysis({
+      trend: makeTrend(),
+      structure: makeStructure({ lastSwingLow: null }),
+      volatility: makeVolatility({ currentAtr: 0.0060 }),
+      supportResistance: makeSR({
+        supports: [],
+        resistances: [],
+      }),
+      setups: makeSetups([{
+        setup: 'Bullish Trend Continuation',
+        direction: 'bullish',
+        strength: 60,
+        conditionsMet: ['trend'],
+        conditionsMissing: [],
+        conditionsMetCount: 1,
+        conditionsTotal: 1,
+        invalidationCondition: 'price falls below 1.1049',
+      }]),
+      currentPrice: 1.1050,
+      accountSize: 10000,
+      maxRiskPercent: 1,
+    });
+
+    expect(result.positionSizing).toBeNull();
   });
 
   it('returns null position sizing when inputs are missing', () => {

@@ -13,6 +13,7 @@ import multiTimeframeRoutes from './routes/multi-timeframe.routes';
 import setupsRoutes from './routes/setups.routes';
 import confidenceRoutes from './routes/confidence.routes';
 import riskRoutes from './routes/risk.routes';
+import aiRoutes from './routes/ai.routes';
 
 export function createApp(): Application {
   const app = express();
@@ -36,6 +37,7 @@ export function createApp(): Application {
   app.use('/api/analysis', setupsRoutes);
   app.use('/api/analysis', confidenceRoutes);
   app.use('/api/analysis', riskRoutes);
+  app.use('/api/analysis', aiRoutes);
 
   // Future routers (Phase 24 onward) will mount here, e.g.:
   // app.use('/api/analysis', analysisRoutes);
