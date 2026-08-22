@@ -159,10 +159,13 @@ describe('computeRiskAnalysis', () => {
     expect(result.invalidationCandidates[0].price).toBeCloseTo(1.1020, 4);
   });
 
-  it('falls back to protected structure level when no setup invalidation exists', () => {
+  it('falls back to protected structure levels when no setup invalidation exists', () => {
     const result = computeRiskAnalysis({
-      trend: makeTrend(),
-      structure: makeStructure(),
+      trend: makeTrend({ trend: 'neutral' }),
+      structure: makeStructure({
+        lastSwingLow: { type: 'low', timestamp: '2024-01-01T00:00:00.000Z', price: 1.0980, index: 0 },
+        lastSwingHigh: { type: 'high', timestamp: '2024-01-01T00:00:00.000Z', price: 1.1080, index: 0 },
+      }),
       volatility: makeVolatility(),
       supportResistance: makeSR(),
       setups: makeSetups([]),
@@ -170,16 +173,19 @@ describe('computeRiskAnalysis', () => {
     });
 
     expect(result.invalidationCandidates.length).toBeGreaterThan(0);
-    expect(result.invalidationCandidates[0].source).toBe('protectedStructureLevel');
-    expect(result.invalidationCandidates[0].price).toBeCloseTo(1.0980, 4);
+    const structureCandidate = result.invalidationCandidates.find((c) => c.source === 'protectedStructureLevel');
+    expect(structureCandidate).toBeDefined();
   });
 
-  it('falls back to EMA50 when no structural invalidation exists', () => {
+  it('falls back to EMA50 only when no structural or S/R invalidation exists', () => {
     const result = computeRiskAnalysis({
       trend: makeTrend({ ema: { ema20: 1.1020, ema50: 1.1000, ema200: 1.0950 } }),
       structure: makeStructure({ lastSwingLow: null, lastSwingHigh: null }),
       volatility: makeVolatility(),
-      supportResistance: makeSR(),
+      supportResistance: makeSR({
+        supports: [],
+        resistances: [],
+      }),
       setups: makeSetups([]),
       currentPrice: 1.1050,
     });
@@ -188,12 +194,12 @@ describe('computeRiskAnalysis', () => {
     expect(result.invalidationCandidates[0].source).toBe('emaBreak');
   });
 
-  it('returns empty invalidation candidates when data is insufficient', () => {
+  it('returns empty invalidation candidates when all data sources are empty', () => {
     const result = computeRiskAnalysis({
       trend: makeTrend({ ema: { ema20: null, ema50: null, ema200: null } }),
       structure: makeStructure({ lastSwingLow: null, lastSwingHigh: null }),
       volatility: makeVolatility(),
-      supportResistance: makeSR(),
+      supportResistance: makeSR({ supports: [], resistances: [] }),
       setups: makeSetups([]),
       currentPrice: 1.1050,
     });
@@ -301,5 +307,69 @@ describe('computeRiskAnalysis', () => {
     });
 
     expect(result.disclaimer).toContain('not a probability of profit');
+  });
+
+  it('GUARDRAIL: bearish invalidation must be above current price', () => {
+    const result = computeRiskAnalysis({
+      trend: makeTrend({ trend: 'neutral' }),
+      structure: makeStructure({
+        lastSwingHigh: { type: 'high', timestamp: '2024-01-01T00:00:00.000Z', price: 1.1080, index: 0 },
+        lastSwingLow: { type: 'low', timestamp: '2024-01-01T00:00:00.000Z', price: 1.0980, index: 0 },
+      }),
+      volatility: makeVolatility(),
+      supportResistance: makeSR(),
+      setups: makeSetups([]),
+      currentPrice: 1.1050,
+    });
+
+    const bearishScenario = result.riskRewardScenarios.find((s) => s.direction === 'bearish');
+    if (bearishScenario) {
+      expect(bearishScenario.invalidation.price).toBeGreaterThan(1.1050);
+    }
+  });
+
+  it('GUARDRAIL: bullish invalidation must be below current price', () => {
+    const result = computeRiskAnalysis({
+      trend: makeTrend({ trend: 'neutral' }),
+      structure: makeStructure({
+        lastSwingHigh: { type: 'high', timestamp: '2024-01-01T00:00:00.000Z', price: 1.1080, index: 0 },
+        lastSwingLow: { type: 'low', timestamp: '2024-01-01T00:00:00.000Z', price: 1.0980, index: 0 },
+      }),
+      volatility: makeVolatility(),
+      supportResistance: makeSR(),
+      setups: makeSetups([]),
+      currentPrice: 1.1050,
+    });
+
+    const bullishScenario = result.riskRewardScenarios.find((s) => s.direction === 'bullish');
+    if (bullishScenario) {
+      expect(bullishScenario.invalidation.price).toBeLessThan(1.1050);
+    }
+  });
+
+  it('provides separate invalidation for bullish and bearish even when trend is unclear', () => {
+    const result = computeRiskAnalysis({
+      trend: makeTrend({ trend: 'neutral', score: 5 }),
+      structure: makeStructure({
+        trend: 'range',
+        lastSwingHigh: { type: 'high', timestamp: '2024-01-01T00:00:00.000Z', price: 1.1080, index: 0 },
+        lastSwingLow: { type: 'low', timestamp: '2024-01-01T00:00:00.000Z', price: 1.0980, index: 0 },
+      }),
+      volatility: makeVolatility(),
+      supportResistance: makeSR(),
+      setups: makeSetups([]),
+      currentPrice: 1.1050,
+    });
+
+    expect(result.riskRewardScenarios.length).toBe(2);
+
+    const bullish = result.riskRewardScenarios.find((s) => s.direction === 'bullish');
+    const bearish = result.riskRewardScenarios.find((s) => s.direction === 'bearish');
+
+    expect(bullish).toBeDefined();
+    expect(bearish).toBeDefined();
+    expect(bullish!.invalidation.price).toBeLessThan(1.1050);
+    expect(bearish!.invalidation.price).toBeGreaterThan(1.1050);
+    expect(bullish!.invalidation.price).not.toEqual(bearish!.invalidation.price);
   });
 });

@@ -31,18 +31,18 @@ function isInZone(currentPrice: number, zoneLow: number, zoneHigh: number): bool
   return currentPrice >= zoneLow && currentPrice <= zoneHigh;
 }
 
-function isNearSupport(currentPrice: number, supports: SetupContext['supportResistance']['supports']): boolean {
-  for (const level of supports) {
-    if (isInZone(currentPrice, level.zoneLow, level.zoneHigh) || isNearLevel(currentPrice, level.zoneLow)) {
+function isNearResistance(currentPrice: number, resistances: SetupContext['supportResistance']['resistances']): boolean {
+  for (const level of resistances) {
+    if (currentPrice >= level.zoneHigh) {
       return true;
     }
   }
   return false;
 }
 
-function isNearResistance(currentPrice: number, resistances: SetupContext['supportResistance']['resistances']): boolean {
-  for (const level of resistances) {
-    if (isInZone(currentPrice, level.zoneLow, level.zoneHigh) || isNearLevel(currentPrice, level.zoneHigh)) {
+function isNearSupport(currentPrice: number, supports: SetupContext['supportResistance']['supports']): boolean {
+  for (const level of supports) {
+    if (currentPrice <= level.zoneLow) {
       return true;
     }
   }
@@ -54,25 +54,45 @@ function hasRecentBOS(structure: SetupContext['structure']): boolean {
 }
 
 function findNearestSupport(currentPrice: number, supports: SetupContext['supportResistance']['supports']): { price: number; zoneLow: number } | null {
-  let nearest: { price: number; zoneLow: number; distance: number } | null = null;
+  let nearestBelow: { price: number; zoneLow: number; distance: number } | null = null;
+  let nearestAbove: { price: number; zoneLow: number; distance: number } | null = null;
+
   for (const level of supports) {
     const distance = Math.abs(currentPrice - level.price);
-    if (!nearest || distance < nearest.distance) {
-      nearest = { price: level.price, zoneLow: level.zoneLow, distance };
+    if (level.price <= currentPrice) {
+      if (!nearestBelow || distance < nearestBelow.distance) {
+        nearestBelow = { price: level.price, zoneLow: level.zoneLow, distance };
+      }
+    } else {
+      if (!nearestAbove || distance < nearestAbove.distance) {
+        nearestAbove = { price: level.price, zoneLow: level.zoneLow, distance };
+      }
     }
   }
-  return nearest ? { price: nearest.price, zoneLow: nearest.zoneLow } : null;
+
+  return nearestBelow ? { price: nearestBelow.price, zoneLow: nearestBelow.zoneLow } :
+         nearestAbove ? { price: nearestAbove.price, zoneLow: nearestAbove.zoneLow } : null;
 }
 
 function findNearestResistance(currentPrice: number, resistances: SetupContext['supportResistance']['resistances']): { price: number; zoneHigh: number } | null {
-  let nearest: { price: number; zoneHigh: number; distance: number } | null = null;
+  let nearestAbove: { price: number; zoneHigh: number; distance: number } | null = null;
+  let nearestBelow: { price: number; zoneHigh: number; distance: number } | null = null;
+
   for (const level of resistances) {
     const distance = Math.abs(currentPrice - level.price);
-    if (!nearest || distance < nearest.distance) {
-      nearest = { price: level.price, zoneHigh: level.zoneHigh, distance };
+    if (level.price >= currentPrice) {
+      if (!nearestAbove || distance < nearestAbove.distance) {
+        nearestAbove = { price: level.price, zoneHigh: level.zoneHigh, distance };
+      }
+    } else {
+      if (!nearestBelow || distance < nearestBelow.distance) {
+        nearestBelow = { price: level.price, zoneHigh: level.zoneHigh, distance };
+      }
     }
   }
-  return nearest ? { price: nearest.price, zoneHigh: nearest.zoneHigh } : null;
+
+  return nearestAbove ? { price: nearestAbove.price, zoneHigh: nearestAbove.zoneHigh } :
+         nearestBelow ? { price: nearestBelow.price, zoneHigh: nearestBelow.zoneHigh } : null;
 }
 
 function higherTfOk(ctx: SetupContext): boolean {

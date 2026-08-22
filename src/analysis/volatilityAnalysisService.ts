@@ -7,7 +7,7 @@ import { createLogger } from '../utils/logger';
 
 const logger = createLogger('volatilityAnalysis');
 
-const CACHE_TTL_MS = 90_000;
+const CACHE_TTL_MS = 15_000;
 
 interface CacheEntry {
   timestamp: number;

@@ -200,6 +200,7 @@ function buildInvalidationCandidates(
   nearbyResistance: NearbyLevel | null,
   atr: number
 ): InvalidationCandidate[] {
+  const { currentPrice } = params;
   const candidates: InvalidationCandidate[] = [];
 
   const activeSetups = params.setups.filter((s) => s.conditionsMet.length > 0);
@@ -222,7 +223,7 @@ function buildInvalidationCandidates(
     }
   }
 
-  if (params.structure.lastSwingLow && params.structure.trend === 'bullish') {
+  if (params.structure.lastSwingLow) {
     const distance = Math.abs(params.currentPrice - params.structure.lastSwingLow.price);
     candidates.push({
       source: 'protectedStructureLevel',
@@ -233,7 +234,7 @@ function buildInvalidationCandidates(
     });
   }
 
-  if (params.structure.lastSwingHigh && params.structure.trend === 'bearish') {
+  if (params.structure.lastSwingHigh) {
     const distance = Math.abs(params.currentPrice - params.structure.lastSwingHigh.price);
     candidates.push({
       source: 'protectedStructureLevel',
@@ -244,13 +245,41 @@ function buildInvalidationCandidates(
     });
   }
 
+  if (nearbySupport && nearbySupport.price < currentPrice) {
+    const distance = Math.abs(currentPrice - nearbySupport.price);
+    const exists = candidates.some((c) => Math.abs(c.price - nearbySupport.price) < atr * 0.1);
+    if (!exists) {
+      candidates.push({
+        source: 'nearbySupport',
+        price: nearbySupport.price,
+        description: `Nearby support at ${nearbySupport.price.toFixed(5)}`,
+        distanceFromPrice: distance,
+        distanceInATR: atr > 0 ? distance / atr : 0,
+      });
+    }
+  }
+
+  if (nearbyResistance && nearbyResistance.price > currentPrice) {
+    const distance = Math.abs(currentPrice - nearbyResistance.price);
+    const exists = candidates.some((c) => Math.abs(c.price - nearbyResistance.price) < atr * 0.1);
+    if (!exists) {
+      candidates.push({
+        source: 'nearbyResistance',
+        price: nearbyResistance.price,
+        description: `Nearby resistance at ${nearbyResistance.price.toFixed(5)}`,
+        distanceFromPrice: distance,
+        distanceInATR: atr > 0 ? distance / atr : 0,
+      });
+    }
+  }
+
   if (candidates.length === 0 && params.trend.ema.ema50 !== null) {
     const ema50 = params.trend.ema.ema50;
     const distance = Math.abs(params.currentPrice - ema50);
     candidates.push({
       source: 'emaBreak',
       price: ema50,
-      description: `Sustained close below EMA50 (${ema50.toFixed(5)}) — lower-confidence invalidation signal`,
+      description: `Sustained ${ema50 > currentPrice ? 'reclaim' : 'close'} of EMA50 (${ema50.toFixed(5)}) — lower-confidence invalidation signal`,
       distanceFromPrice: distance,
       distanceInATR: atr > 0 ? distance / atr : 0,
     });
@@ -269,19 +298,36 @@ function buildRiskRewardScenarios(
 
   if (invalidationCandidates.length === 0) return scenarios;
 
-  const primaryInvalidation = invalidationCandidates[0];
+  let bullishInvalidation = invalidationCandidates.find((c) => c.price < currentPrice);
+  let bearishInvalidation = invalidationCandidates.find((c) => c.price > currentPrice);
+
+  if (!bullishInvalidation) {
+    bullishInvalidation = invalidationCandidates[0];
+    console.warn(`[risk] No bullish invalidation below current price ${currentPrice}. Using closest: ${bullishInvalidation.price}`);
+  }
+  if (!bearishInvalidation) {
+    bearishInvalidation = invalidationCandidates[0];
+    console.warn(`[risk] No bearish invalidation above current price ${currentPrice}. Using closest: ${bearishInvalidation.price}`);
+  }
+
+  if (bullishInvalidation.price >= currentPrice) {
+    console.warn(`[risk] VALIDATION: bullish invalidation ${bullishInvalidation.price} is NOT below current price ${currentPrice}`);
+  }
+  if (bearishInvalidation.price <= currentPrice) {
+    console.warn(`[risk] VALIDATION: bearish invalidation ${bearishInvalidation.price} is NOT above current price ${currentPrice}`);
+  }
 
   if (nearbyResistance && nearbyResistance.price > currentPrice) {
     const targetDistance = nearbyResistance.price - currentPrice;
-    const invalidationDistance = Math.abs(currentPrice - primaryInvalidation.price);
+    const invalidationDistance = Math.abs(currentPrice - bullishInvalidation.price);
     const ratio = invalidationDistance > 0 ? (targetDistance / invalidationDistance).toFixed(2) : '0.00';
 
     scenarios.push({
       direction: 'bullish',
       entryReference: currentPrice,
       invalidation: {
-        price: primaryInvalidation.price,
-        distanceInATR: primaryInvalidation.distanceInATR,
+        price: bullishInvalidation.price,
+        distanceInATR: bullishInvalidation.distanceInATR,
       },
       target: {
         price: nearbyResistance.price,
@@ -294,15 +340,15 @@ function buildRiskRewardScenarios(
 
   if (nearbySupport && nearbySupport.price < currentPrice) {
     const targetDistance = currentPrice - nearbySupport.price;
-    const invalidationDistance = Math.abs(currentPrice - primaryInvalidation.price);
+    const invalidationDistance = Math.abs(currentPrice - bearishInvalidation.price);
     const ratio = invalidationDistance > 0 ? (targetDistance / invalidationDistance).toFixed(2) : '0.00';
 
     scenarios.push({
       direction: 'bearish',
       entryReference: currentPrice,
       invalidation: {
-        price: primaryInvalidation.price,
-        distanceInATR: primaryInvalidation.distanceInATR,
+        price: bearishInvalidation.price,
+        distanceInATR: bearishInvalidation.distanceInATR,
       },
       target: {
         price: nearbySupport.price,
@@ -341,13 +387,13 @@ function calculatePositionSizing(
   if (pipValue <= 0 || riskDistance <= 0) return null;
 
   const riskDistanceInPips = riskDistance / pipValue;
-  const positionSizeUnits = riskAmount / riskDistanceInPips;
+  const positionSizeUnits = riskAmount / riskDistance;
   const positionSizeLots = lotSize > 0 ? positionSizeUnits / lotSize : 0;
 
   return {
     riskAmount: Math.round(riskAmount * 100) / 100,
     riskDistanceInPips: Math.round(riskDistanceInPips * 100) / 100,
-    positionSizeUnits: Math.round(positionSizeUnits * 100) / 100,
+    positionSizeUnits: Math.round(positionSizeUnits),
     positionSizeLots: Math.round(positionSizeLots * 10000) / 10000,
     basedOnInvalidation: primaryInvalidation.price,
     unusuallyHighRisk,

@@ -94,12 +94,31 @@ function getCachedAllowStale(symbol: Symbol, timeframe: Timeframe): TimeframeSna
   return entry?.data ?? null;
 }
 
-export function classifyAlignment(higher: TimeframeSnapshot | null, analysis: TimeframeSnapshot): MultiTimeframeAlignment {
-  if (higher?.status !== 'ok' || analysis.status !== 'ok') {
+export function classifyAlignment(
+  higher: TimeframeSnapshot | null,
+  analysis: TimeframeSnapshot,
+  lower: TimeframeSnapshot | null
+): MultiTimeframeAlignment {
+  if (analysis.status !== 'ok') {
     return 'insufficient_data';
   }
-  if (higher.trend === 'bullish' && analysis.trend === 'bullish') return 'aligned_bullish';
-  if (higher.trend === 'bearish' && analysis.trend === 'bearish') return 'aligned_bearish';
+
+  const snapshots = [higher, analysis, lower].filter((s): s is TimeframeSnapshot => s !== null && s.status === 'ok');
+
+  if (snapshots.length === 0) {
+    return 'insufficient_data';
+  }
+
+  const allBullish = snapshots.every((s) => s.trend === 'bullish');
+  const allBearish = snapshots.every((s) => s.trend === 'bearish');
+  const allSameDirection = allBullish || allBearish;
+
+  if (allBullish) return 'aligned_bullish';
+  if (allBearish) return 'aligned_bearish';
+  if (snapshots.length >= 2 && snapshots[0].trend === snapshots[1].trend && snapshots[1].trend !== 'neutral') {
+    return snapshots[1].trend === 'bullish' ? 'partially_aligned_bullish' : 'partially_aligned_bearish';
+  }
+
   return 'mixed';
 }
 
@@ -173,7 +192,7 @@ export async function analyzeMultiTimeframe(symbol: Symbol, analysisTimeframe: T
 
   const [higher, analysis, lower] = await Promise.all([fetchHigher, fetchAnalysis, fetchLower]);
 
-  const alignment = classifyAlignment(higher, analysis);
+  const alignment = classifyAlignment(higher, analysis, lower);
   const pattern = detectPattern(higher, analysis, lower);
   const explanation = generateExplanation(alignment, higher, analysis, lower, pattern);
 

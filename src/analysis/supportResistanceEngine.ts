@@ -8,6 +8,21 @@ const ATR_PERIOD = 14;
 const MIN_STRENGTH = 35;
 const MAX_LEVELS = 3;
 const PROXIMITY_ATR_MULTIPLE = 3.0;
+
+function roundPrice(price: number, precision: number): number {
+  const factor = Math.pow(10, precision);
+  return Math.round(price * factor) / factor;
+}
+
+function normalizeLevelPrice(level: SupportResistanceLevel, symbol: string): SupportResistanceLevel {
+  const precision = symbol.includes('JPY') ? 3 : symbol === 'XAU/USD' ? 2 : symbol ? 5 : 4;
+  return {
+    ...level,
+    price: roundPrice(level.price, precision),
+    zoneLow: roundPrice(level.zoneLow, precision),
+    zoneHigh: roundPrice(level.zoneHigh, precision),
+  };
+}
 const RELEVANCE_WINDOW = 100;
 /** Cap zone width so clusters cannot span most of the visible range. */
 const MAX_ZONE_WIDTH_ATR = 1.0;

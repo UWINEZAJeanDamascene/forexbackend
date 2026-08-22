@@ -1,0 +1,1 @@
+{"version":3,"file":"multiTimeframeAnalysisService.js","sourceRoot":"","sources":["../../../src/analysis/multiTimeframeAnalysisService.ts"],"names":[],"mappings":";;AAIA,8DAQC;AAVD,iFAAuE;AAEhE,KAAK,UAAU,yBAAyB,CAAC,MAAc,EAAE,SAAoB;IAClF,MAAM,cAAc,GAAG,MAAM,IAAA,oDAAqB,EAAC,MAAM,EAAE,SAAS,CAAC,CAAC;IAEtE,OAAO;QACL,MAAM;QACN,SAAS;QACT,cAAc;KACf,CAAC;AACJ,CAAC"}

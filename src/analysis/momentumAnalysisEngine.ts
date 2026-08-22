@@ -55,23 +55,30 @@ export function analyzeMomentum(
   const macdComponent = scoreMacd(indicators.macd, currentAtr, candles);
   const priceComponent = scorePriceMovement(candles, currentAtr);
 
-  const rawScore =
-    rsiComponent.score * RSI_WEIGHT +
-    macdComponent.score * MACD_WEIGHT +
-    priceComponent.score * PRICE_MOVEMENT_WEIGHT;
+  const rsiContribution = rsiComponent.score * RSI_WEIGHT;
+  const macdContribution = macdComponent.score * MACD_WEIGHT;
+  const priceContribution = priceComponent.score * PRICE_MOVEMENT_WEIGHT;
+  const rawScore = rsiContribution + macdContribution + priceContribution;
 
   const rawDirection = rawScore > 5 ? 'bullish' : rawScore < -5 ? 'bearish' : 'neutral';
   const counterTrend = rawDirection !== 'neutral' && rawDirection !== trendContext && trendContext !== 'neutral';
 
   let adjustedScore = rawScore;
+  let adjustmentFactor = 1;
+  let adjustmentReason = '';
   if (counterTrend) {
     adjustedScore = rawScore * TREND_DAMPEN_MULTIPLIER;
+    adjustmentFactor = TREND_DAMPEN_MULTIPLIER;
+    adjustmentReason = 'counter-trend dampening';
   } else if (rawDirection === trendContext && trendContext !== 'neutral') {
     adjustedScore = rawScore * TREND_REINFORCE_MULTIPLIER;
+    adjustmentFactor = TREND_REINFORCE_MULTIPLIER;
+    adjustmentReason = 'trend reinforcement';
   }
 
   const clampedScore = Math.round(Math.max(Math.min(adjustedScore, 100), -100));
   const momentum = classifyMomentum(clampedScore);
+  const momentumLean = classifyMomentumWithLean(clampedScore).lean;
   const strength = deriveStrength(clampedScore, momentum);
   const divergence = detectDivergence(candles, indicators.rsi14);
 
@@ -81,8 +88,12 @@ export function analyzeMomentum(
 
   return {
     momentum,
+    momentumLean,
     strength,
     score: clampedScore,
+    rawScore: Math.round(rawScore * 100) / 100,
+    adjustmentFactor,
+    adjustmentReason,
     counterTrend,
     counterTrendExplanation,
     trendContext,
@@ -246,6 +257,14 @@ function classifyMomentum(score: number): MomentumDirection {
   if (score >= 30) return 'bullish';
   if (score <= -30) return 'bearish';
   return 'neutral';
+}
+
+function classifyMomentumWithLean(score: number): { direction: MomentumDirection; lean: string | null } {
+  if (score >= 30) return { direction: 'bullish', lean: null };
+  if (score <= -30) return { direction: 'bearish', lean: null };
+  if (score >= 10) return { direction: 'neutral', lean: 'leaning bullish' };
+  if (score <= -10) return { direction: 'neutral', lean: 'leaning bearish' };
+  return { direction: 'neutral', lean: null };
 }
 
 function deriveStrength(score: number, direction: MomentumDirection): MomentumStrength | null {

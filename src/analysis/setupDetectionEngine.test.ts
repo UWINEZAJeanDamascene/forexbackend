@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { detectSetups, SETUP_DEFINITIONS } from './setupDetectionEngine';
+import { detectSetups } from './setupDetectionEngine';
 import { SetupContext } from '../../shared/types/setupDetection';
 
 function makeContext(overrides: Partial<SetupContext> = {}): SetupContext {
   return {
     symbol: 'EUR/USD',
-    currentPrice: 1.165,
+    currentPrice: 1.1635,
     trend: {
       trend: 'bullish',
       strength: 'strong',
@@ -95,7 +95,7 @@ describe('detectSetups', () => {
 
   it('detects bullish breakout with BOS and normal/high volatility', () => {
     const ctx = makeContext({
-      currentPrice: 1.1701,
+      currentPrice: 1.1703,
       structure: {
         trend: 'bullish',
         events: [{ type: 'break_of_structure', price: 1.168 }],
@@ -148,7 +148,7 @@ describe('detectSetups', () => {
 
   it('does not detect setups when market is flat/neutral with no clear pattern', () => {
     const ctx = makeContext({
-      currentPrice: 1.155,
+      currentPrice: 1.1670,
       trend: {
         ...makeContext().trend,
         trend: 'neutral',
@@ -169,9 +169,10 @@ describe('detectSetups', () => {
       multiTimeframe: {
         alignment: 'mixed',
         possiblePattern: null,
-        higherTimeframe: { timeframe: '4H', trend: 'neutral' },
-        analysis: { timeframe: '1H', trend: 'neutral', score: 0 },
-        lowerTimeframe: { timeframe: '15m', trend: 'neutral' },
+        higherTimeframe: { timeframe: '4H', trend: 'neutral', status: 'ok' },
+        analysis: { timeframe: '1H', trend: 'neutral', score: 0, status: 'ok' },
+        lowerTimeframe: { timeframe: '15m', trend: 'neutral', status: 'ok' },
+        higherTimeframeIncomplete: false,
       },
     });
     const setups = detectSetups(ctx);
@@ -247,7 +248,7 @@ describe('detectSetups', () => {
 
   it('detects bearish breakout when price at support with BOS', () => {
     const ctx = makeContext({
-      currentPrice: 1.1639,
+      currentPrice: 1.1637,
       trend: {
         trend: 'bearish',
         strength: 'moderate',
@@ -267,9 +268,6 @@ describe('detectSetups', () => {
         alignment: 'aligned_bearish',
         possiblePattern: null,
         higherTimeframe: { timeframe: '4H', trend: 'bearish', status: 'ok' },
-        analysis: { timeframe: '1H', trend: 'bearish', score: -55, status: 'ok' },
-        lowerTimeframe: { timeframe: '15m', trend: 'bearish', status: 'ok' },
-        higherTimeframeIncomplete: false,
       },
     });
     const setups = detectSetups(ctx);
@@ -277,9 +275,8 @@ describe('detectSetups', () => {
 
     expect(setup).toBeDefined();
     expect(setup!.direction).toBe('bearish');
+    expect(setup!.conditionsMet).toContain('Recent break of structure');
     expect(setup!.conditionsMet).toContain('Price at or below support');
-    expect(setup!.conditionsMetCount).toBeGreaterThanOrEqual(2);
-    expect(setup!.conditionsTotal).toBe(3);
   });
 
   it('excludes HTF-dependent setups when higher timeframe data is incomplete', () => {

@@ -154,19 +154,21 @@ function percentileRank(values: number[], target: number): number {
 }
 
 function detectBandDisagreement(atrPercentile: number, bandWidthPercentile: number): boolean {
-  const atrExtreme = atrPercentile >= 70 || atrPercentile <= 30;
-  const bandWidthMiddle = bandWidthPercentile > 30 && bandWidthPercentile < 70;
-  if (atrExtreme && bandWidthMiddle) return true;
+  const gap = Math.abs(atrPercentile - bandWidthPercentile);
 
-  const bandWidthExtreme = bandWidthPercentile >= 70 || bandWidthPercentile <= 30;
-  const atrMiddle = atrPercentile > 30 && atrPercentile < 70;
-  if (bandWidthExtreme && atrMiddle) return true;
+  const atrExtreme = atrPercentile <= 20 || atrPercentile >= 80;
+  const bbExtreme = bandWidthPercentile <= 20 || bandWidthPercentile >= 80;
+  const atrMiddle = !atrExtreme;
+  const bbMiddle = !bbExtreme;
 
-  const atrHigh = atrPercentile >= 70;
-  const atrLow = atrPercentile <= 30;
-  const bandWidthHigh = bandWidthPercentile >= 70;
-  const bandWidthLow = bandWidthPercentile <= 30;
-  if ((atrHigh && bandWidthLow) || (atrLow && bandWidthHigh)) return true;
+  // Both in extreme but opposite ends (e.g., ATR high, BB low)
+  if (atrExtreme && bbExtreme && gap >= 60) return true;
+
+  // One extreme, the other in middle territory
+  if ((atrExtreme && bbMiddle) || (bbExtreme && atrMiddle)) return true;
+
+  // Both in middle but significantly diverged
+  if (atrMiddle && bbMiddle && gap >= 25) return true;
 
   return false;
 }
