@@ -21,6 +21,7 @@ interface CandleCacheEntry {
 }
 
 const candleCache = new Map<string, CandleCacheEntry>();
+const pendingCandleRequests = new Map<string, Promise<ValidatedMarketData>>();
 
 function candleCacheKey(symbol: Symbol, timeframe: Timeframe, limit?: number): string {
   return `${symbol}:${timeframe}:${limit ?? 'default'}`;
@@ -44,6 +45,7 @@ function setCachedCandles(symbol: Symbol, timeframe: Timeframe, limit: number | 
 
 export function clearCandleCache(): void {
   candleCache.clear();
+  pendingCandleRequests.clear();
 }
 
 export interface GetValidatedCandlesOptions {
@@ -104,18 +106,31 @@ export async function getValidatedCandles(
     return { ...validated, analysisCandles: getClosedAnalysisCandles(validated.candles, timeframe), source: cached.source, fetchedAt: new Date(cached.timestamp).toISOString(), provider: cached.source, fallbackUsed: cached.fallbackUsed, fallbackFrom: cached.fallbackFrom, providerFailureKinds: cached.providerFailureKinds };
   }
 
+  const requestKey = candleCacheKey(symbol, timeframe, options.limit);
+  const pending = pendingCandleRequests.get(requestKey);
+  if (pending) return pending;
+
   const provider = options.provider ?? (await loadDefaultProvider());
 
-  const rawCandles = await provider.getCandles(symbol, timeframe, options.limit);
+  const request = (async (): Promise<ValidatedMarketData> => {
+    const rawCandles = await provider.getCandles(symbol, timeframe, options.limit);
 
-  const validated = validateCandleSeries(rawCandles, timeframe, {
-    minCandles: options.minCandles,
-    context: { symbol, timeframe },
-  });
-  rejectFutureLastCandle(validated.candles, timeframe, { symbol, timeframe });
-  const metadata = providerMetadata(provider);
-  setCachedCandles(symbol, timeframe, options.limit, rawCandles, metadata);
-  return { ...validated, analysisCandles: getClosedAnalysisCandles(validated.candles, timeframe), source: metadata.provider, fetchedAt: new Date().toISOString(), provider: metadata.provider, fallbackUsed: metadata.fallbackUsed, fallbackFrom: metadata.fallbackFrom, providerFailureKinds: metadata.failureKinds ?? [] };
+    const validated = validateCandleSeries(rawCandles, timeframe, {
+      minCandles: options.minCandles,
+      context: { symbol, timeframe },
+    });
+    rejectFutureLastCandle(validated.candles, timeframe, { symbol, timeframe });
+    const metadata = providerMetadata(provider);
+    setCachedCandles(symbol, timeframe, options.limit, rawCandles, metadata);
+    return { ...validated, analysisCandles: getClosedAnalysisCandles(validated.candles, timeframe), source: metadata.provider, fetchedAt: new Date().toISOString(), provider: metadata.provider, fallbackUsed: metadata.fallbackUsed, fallbackFrom: metadata.fallbackFrom, providerFailureKinds: metadata.failureKinds ?? [] };
+  })();
+
+  pendingCandleRequests.set(requestKey, request);
+  try {
+    return await request;
+  } finally {
+    pendingCandleRequests.delete(requestKey);
+  }
 }
 
 async function loadDefaultProvider(): Promise<MarketDataProvider> {

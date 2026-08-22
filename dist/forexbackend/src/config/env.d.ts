@@ -13,7 +13,11 @@ export interface EnvConfig {
     twelveDataApiKey: string | undefined;
     finnhubApiKey: string | undefined;
     aiApiKey: string | undefined;
+    aiApiUrl: string | undefined;
     aiModel: string | undefined;
+    aiFallbackApiKey: string | undefined;
+    aiFallbackApiUrl: string | undefined;
+    aiFallbackModel: string | undefined;
 }
 export declare function getEnv(): EnvConfig;
 export declare function logEnvStatus(config: EnvConfig): void;

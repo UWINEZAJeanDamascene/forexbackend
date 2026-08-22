@@ -10,7 +10,7 @@ const supportResistanceService_1 = require("./supportResistanceService");
 const multiTimeframeAnalysisEngine_1 = require("./multiTimeframeAnalysisEngine");
 const setupDetectionEngine_1 = require("./setupDetectionEngine");
 async function getSetupDetection(symbol, timeframe) {
-    const { candles } = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe);
+    const { analysisCandles: candles } = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe, { limit: marketDataService_1.DEFAULT_ANALYSIS_CANDLE_LIMIT });
     const [trendResponse, structureResponse, momentumResponse, volatilityResponse, srResponse, mtfResponse] = await Promise.all([
         (0, trendAnalysisService_1.getTrendAnalysis)(symbol, timeframe, {}),
         (0, marketStructureService_1.getMarketStructure)(candles, {}),

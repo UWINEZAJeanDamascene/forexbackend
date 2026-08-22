@@ -39,7 +39,11 @@ function getEnv() {
         twelveDataApiKey: process.env.TWELVE_DATA_API_KEY || undefined,
         finnhubApiKey: process.env.FINNHUB_API_KEY || undefined,
         aiApiKey: process.env.AI_API_KEY || undefined,
+        aiApiUrl: process.env.AI_API_URL || undefined,
         aiModel: process.env.AI_MODEL || undefined,
+        aiFallbackApiKey: process.env.AI_FALLBACK_API_KEY || undefined,
+        aiFallbackApiUrl: process.env.AI_FALLBACK_API_URL || undefined,
+        aiFallbackModel: process.env.AI_FALLBACK_MODEL || undefined,
     };
 }
 /**
@@ -63,6 +67,7 @@ function logEnvStatus(config) {
         // Never log the actual secret value - only whether it's present.
         console.log(`[env] ${key}: ${isSet ? 'set' : 'not set'} (required by ${phase})`);
     }
+    console.log(`[env] aiFallbackApiKey: ${config.aiFallbackApiKey ? 'set' : 'not set'} (optional fallback provider)`);
 }
 exports.env = getEnv();
 //# sourceMappingURL=env.js.map

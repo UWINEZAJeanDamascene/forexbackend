@@ -14,7 +14,7 @@ const logger_1 = require("../utils/logger");
 const logger = (0, logger_1.createLogger)('confidenceAnalysis');
 async function getConfidenceAnalysis(symbol, timeframe) {
     try {
-        const { candles } = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe);
+        const { analysisCandles: candles } = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe, { limit: marketDataService_1.DEFAULT_ANALYSIS_CANDLE_LIMIT });
         const [trend, momentum, volatility, sr, mtf, setups] = await Promise.all([
             (0, trendAnalysisService_1.getTrendAnalysis)(symbol, timeframe, {}),
             (0, momentumAnalysisService_1.getMomentumAnalysis)(symbol, timeframe),

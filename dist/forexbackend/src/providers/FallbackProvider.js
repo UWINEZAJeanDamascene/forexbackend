@@ -7,6 +7,7 @@ function isForexSymbol(symbol) {
 }
 class FallbackProvider {
     name = 'fallback';
+    lastFetchMetadata = { provider: 'unknown', fallbackUsed: false, fallbackFrom: undefined, failureKinds: [] };
     providers;
     constructor(providers) {
         if (providers.length === 0) {
@@ -33,6 +34,9 @@ class FallbackProvider {
         return Array.from(timeframeSet);
     }
     supportsForex = true;
+    getLastFetchMetadata() {
+        return this.lastFetchMetadata;
+    }
     async getQuote(symbol) {
         return this.executeWithFallback((provider) => provider.getQuote(symbol), symbol);
     }
@@ -49,7 +53,14 @@ class FallbackProvider {
                 continue;
             }
             try {
-                return await operation(provider);
+                const result = await operation(provider);
+                this.lastFetchMetadata = {
+                    provider: provider.name,
+                    fallbackUsed: errors.length > 0,
+                    fallbackFrom: errors.length > 0 ? errors[0]?.provider : undefined,
+                    failureKinds: errors.map((error) => error.kind),
+                };
+                return result;
             }
             catch (error) {
                 if (error instanceof MarketDataProvider_1.MarketDataError && this.isRetryable(error)) {

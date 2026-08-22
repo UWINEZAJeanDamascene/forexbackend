@@ -56,45 +56,30 @@ function detectSupportResistance(candles, swingWindow = DEFAULT_SWING_WINDOW) {
     const merged = mergeSupportResistanceLevels(withStrength);
     const { supports, resistances, tested } = classifyZones(merged, currentPrice, currentAtr, candles);
     ensureNearestSwingLevels(supports, resistances, tested, swingHighs, swingLows, currentPrice, currentAtr);
-    const finalResistances = resistances
+    // Clamp first, then merge again. Clamping can make two previously separate
+    // zones touch on their final displayed boundaries, including across the
+    // support/tested/resistance categories.
+    const normalizedLevels = [...supports, ...resistances, ...tested]
         .filter((level) => level.strength >= MIN_STRENGTH)
-        .sort((a, b) => b.strength - a.strength);
-    const finalSupports = supports
-        .filter((level) => level.strength >= MIN_STRENGTH)
-        .sort((a, b) => b.strength - a.strength);
-    const finalTested = tested
-        .filter((level) => level.strength >= MIN_STRENGTH)
-        .sort((a, b) => b.strength - a.strength);
+        .map((level) => {
+        const clamped = clampZoneWidth(level, currentAtr);
+        return {
+            ...level,
+            zoneLow: clamped.zoneLow,
+            zoneHigh: clamped.zoneHigh,
+            price: Math.min(Math.max(clamped.price, clamped.zoneLow), clamped.zoneHigh),
+        };
+    });
+    const finalClassified = classifyZones(mergeSupportResistanceLevels(normalizedLevels), currentPrice, currentAtr, candles);
+    const finalResistances = finalClassified.resistances.sort((a, b) => b.strength - a.strength);
+    const finalSupports = finalClassified.supports.sort((a, b) => b.strength - a.strength);
+    const finalTested = finalClassified.tested.sort((a, b) => b.strength - a.strength);
     return {
         symbol: '',
         timeframe: '',
-        supports: finalSupports.slice(0, MAX_LEVELS).map((level) => {
-            const clamped = clampZoneWidth(level, currentAtr);
-            return {
-                ...level,
-                zoneLow: clamped.zoneLow,
-                zoneHigh: clamped.zoneHigh,
-                price: Math.min(Math.max(clamped.price, clamped.zoneLow), clamped.zoneHigh),
-            };
-        }),
-        resistances: finalResistances.slice(0, MAX_LEVELS).map((level) => {
-            const clamped = clampZoneWidth(level, currentAtr);
-            return {
-                ...level,
-                zoneLow: clamped.zoneLow,
-                zoneHigh: clamped.zoneHigh,
-                price: Math.min(Math.max(clamped.price, clamped.zoneLow), clamped.zoneHigh),
-            };
-        }),
-        tested: finalTested.slice(0, MAX_LEVELS).map((level) => {
-            const clamped = clampZoneWidth(level, currentAtr);
-            return {
-                ...level,
-                zoneLow: clamped.zoneLow,
-                zoneHigh: clamped.zoneHigh,
-                price: Math.min(Math.max(clamped.price, clamped.zoneLow), clamped.zoneHigh),
-            };
-        }),
+        supports: finalSupports.slice(0, MAX_LEVELS),
+        resistances: finalResistances.slice(0, MAX_LEVELS),
+        tested: finalTested.slice(0, MAX_LEVELS),
     };
 }
 function findSwingHighs(candles, window) {
@@ -234,15 +219,17 @@ function mergeSupportResistanceLevels(levels) {
         const wouldOverlap = current.zoneHigh >= next.zoneLow;
         const mergedWidth = Math.max(current.zoneHigh, next.zoneHigh) - Math.min(current.zoneLow, next.zoneLow);
         const currentWidth = current.zoneHigh - current.zoneLow;
-        // Prefer not merging across type boundaries or into oversized zones.
-        const maxAllowed = Math.max(currentWidth, next.zoneHigh - next.zoneLow) * 1.5;
-        if (wouldOverlap && current.type === next.type && mergedWidth <= maxAllowed) {
+        // Overlapping zones represent one price area even when their preliminary
+        // classifications differ. A cross-type merge becomes `tested` and is
+        // classified again against the current price below.
+        const maxAllowed = Math.max(currentWidth, next.zoneHigh - next.zoneLow) * 2;
+        if (wouldOverlap && mergedWidth <= maxAllowed) {
             const totalTouches = current.touches + next.touches;
             current = {
                 price: totalTouches > 0 ? (current.price * current.touches + next.price * next.touches) / totalTouches : current.price,
                 zoneLow: Math.min(current.zoneLow, next.zoneLow),
                 zoneHigh: Math.max(current.zoneHigh, next.zoneHigh),
-                type: current.type,
+                type: current.type === next.type ? current.type : 'tested',
                 strength: Math.max(current.strength, next.strength),
                 touches: totalTouches,
                 lastReactionTime: new Date(current.lastReactionTime) > new Date(next.lastReactionTime) ? current.lastReactionTime : next.lastReactionTime,

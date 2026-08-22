@@ -46,7 +46,8 @@ async function getIndicators(req, res) {
         limit = parsed;
     }
     try {
-        const { candles } = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe, { limit });
+        const validated = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe, { limit });
+        const candles = validated.analysisCandles ?? validated.candles;
         const result = (0, indicatorService_1.computeIndicators)(candles, symbol, timeframe);
         res.status(200).json(result);
     }

@@ -195,6 +195,16 @@ describe('analyzeTrend', () => {
     expect(result.strength).toBe('weak');
   });
 
+  it('keeps the weighted factor sum in the headline score for range structure', () => {
+    const candles = makeCandles([1.16, 1.16, 1.16]);
+    const result = analyzeTrend(candles, makeIndicators(), makeStructure('range', 3, 2, 0, 0));
+    const factorSum = Object.values(result.factors).reduce((sum, factor) => sum + factor.score, 0);
+
+    expect(result.trend).toBe('neutral');
+    expect(result.score).toBe(factorSum);
+    expect(result.score).not.toBe(0);
+  });
+
   it('does not let aggregate count majority override strict structure trend', () => {
     const candles = makeCandles([1.16, 1.15, 1.17]);
     const indicators = makeIndicators({

@@ -87,13 +87,12 @@ export function analyzeTrend(
     trend = 'neutral';
   }
 
-  const effectiveScore = rangeNeedsConfirmation ? 0 : totalScore;
-  const strength = deriveStrength(effectiveScore);
+  const strength = deriveStrength(totalScore);
 
   return {
     trend,
     strength,
-    score: effectiveScore,
+    score: totalScore,
     factors,
     priceVsEmaBreakdown,
     currentPrice: currentPrice ?? 0,

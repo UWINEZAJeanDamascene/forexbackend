@@ -54,6 +54,24 @@ describe('getValidatedCandles', () => {
     expect(provider.getCandles).toHaveBeenCalledWith('EUR/USD', '1H', 50);
   });
 
+  it('coalesces concurrent requests for the same daily snapshot', async () => {
+    let resolveRequest!: (candles: Candle[]) => void;
+    const provider = fakeProvider([]);
+    vi.mocked(provider.getCandles).mockImplementation(() => new Promise((resolve) => {
+      resolveRequest = resolve;
+    }));
+
+    const first = getValidatedCandles('EUR/USD', '1D', { provider, limit: 500 });
+    const second = getValidatedCandles('EUR/USD', '1D', { provider, limit: 500 });
+    resolveRequest([
+      makeCandle('2024-01-01T00:00:00.000Z'),
+      makeCandle('2024-01-02T00:00:00.000Z'),
+    ]);
+
+    await Promise.all([first, second]);
+    expect(provider.getCandles).toHaveBeenCalledTimes(1);
+  });
+
   it('propagates DataValidationError when the provider returns unusable data', async () => {
     const provider = fakeProvider([]);
 

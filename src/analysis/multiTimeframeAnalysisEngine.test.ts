@@ -227,4 +227,18 @@ describe('analyzeMultiTimeframe', () => {
     expect(result.snapshotAt).toEqual(expect.any(String));
     expect(result.timeframeStack?.every((snapshot) => snapshot.analyzedAt)).toBe(true);
   });
+
+  it('includes zero-valued successful timeframes in the score spread', async () => {
+    mockedGetTrendAnalysis
+      .mockReturnValueOnce(makeTrendResponse('neutral', 0))
+      .mockReturnValueOnce(makeTrendResponse('neutral', 31))
+      .mockReturnValueOnce(makeTrendResponse('neutral', 19))
+      .mockReturnValueOnce(makeTrendResponse('neutral', 0))
+      .mockReturnValueOnce(makeTrendResponse('neutral', 0));
+
+    const result = await analyzeMultiTimeframe('EUR/USD', '1H', true);
+
+    expect(result.timeframeStack?.map((snapshot) => snapshot.score)).toEqual([0, 0, 31, 19, 0]);
+    expect(result.scoreRange).toEqual([0, 31]);
+  });
 });

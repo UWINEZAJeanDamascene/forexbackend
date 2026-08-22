@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCandles = getCandles;
 exports.getSymbols = getSymbols;
 exports.getTimeframes = getTimeframes;
+exports.getQuote = getQuote;
 const instruments_1 = require("../../../shared/constants/instruments");
 const marketDataService_1 = require("../services/marketDataService");
 const validation_1 = require("../validation");
@@ -84,14 +85,28 @@ async function getCandles(req, res) {
         limit = parsed;
     }
     try {
-        const { candles, issues, source, fetchedAt } = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe, { limit });
+        const { candles, issues, source, fetchedAt, provider, fallbackUsed, fallbackFrom, providerFailureKinds } = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe, { limit });
+        const lastCandleAt = candles.length > 0 ? candles[candles.length - 1].timestamp : null;
+        const lastCandleMs = lastCandleAt ? new Date(lastCandleAt).getTime() : NaN;
+        const now = Date.now();
+        const ageMs = Number.isFinite(lastCandleMs) ? now - lastCandleMs : null;
+        const timeframeMs = (0, instruments_1.timeframeToMs)(timeframe);
+        const timestampStatus = ageMs === null ? 'unknown' : ageMs < -60_000 ? 'future' : ageMs > timeframeMs * 2 ? 'stale' : 'fresh';
         res.status(200).json({
             symbol,
             timeframe,
             candles,
             source,
+            provider,
+            fallbackUsed,
+            fallbackFrom: fallbackFrom ?? null,
+            providerFailureKinds,
             fetchedAt,
-            lastCandleAt: candles.length > 0 ? candles[candles.length - 1].timestamp : null,
+            lastCandleAt,
+            lastCandleAgeMs: ageMs,
+            latestCandleClosed: ageMs !== null ? ageMs >= timeframeMs : null,
+            timestampTimezone: 'UTC',
+            timestampStatus,
             // Surface non-fatal issues (e.g. gap warnings) so the UI can show a
             // subtle data-quality note without blocking the chart.
             warnings: issues.filter((i) => i.severity === 'warning').map((i) => i.message),
@@ -107,5 +122,20 @@ function getSymbols(_req, res) {
 }
 function getTimeframes(_req, res) {
     res.status(200).json({ timeframes: instruments_1.ENABLED_TIMEFRAMES });
+}
+/** GET /api/market/quote?symbol=USD/JPY */
+async function getQuote(req, res) {
+    const symbol = String(req.query.symbol || '');
+    if (!isEnabledSymbol(symbol)) {
+        res.status(400).json({ error: `Symbol must be one of: ${instruments_1.ENABLED_SYMBOLS.join(', ')}.` });
+        return;
+    }
+    try {
+        const { getCachedQuote } = await import('../services/quoteService');
+        res.status(200).json(await getCachedQuote(symbol));
+    }
+    catch (err) {
+        respondWithError(res, err);
+    }
 }
 //# sourceMappingURL=market.controller.js.map

@@ -19,6 +19,7 @@ const multi_timeframe_routes_1 = __importDefault(require("./routes/multi-timefra
 const setups_routes_1 = __importDefault(require("./routes/setups.routes"));
 const confidence_routes_1 = __importDefault(require("./routes/confidence.routes"));
 const risk_routes_1 = __importDefault(require("./routes/risk.routes"));
+const ai_routes_1 = __importDefault(require("./routes/ai.routes"));
 function createApp() {
     const app = (0, express_1.default)();
     app.use((0, cors_1.default)({
@@ -37,6 +38,7 @@ function createApp() {
     app.use('/api/analysis', setups_routes_1.default);
     app.use('/api/analysis', confidence_routes_1.default);
     app.use('/api/analysis', risk_routes_1.default);
+    app.use('/api/analysis', ai_routes_1.default);
     // Future routers (Phase 24 onward) will mount here, e.g.:
     // app.use('/api/analysis', analysisRoutes);
     // app.use('/api/backtest', backtestRoutes);

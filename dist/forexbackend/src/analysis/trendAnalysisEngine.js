@@ -35,6 +35,7 @@ const TREND_WEIGHTS = {
 };
 const BULLISH_THRESHOLD = 50;
 const BEARISH_THRESHOLD = -50;
+const RANGE_OVERRIDE_THRESHOLD = 70;
 function analyzeTrend(candles, indicators, structure) {
     const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : null;
     const ema20 = lastNonNil(indicators.ema20);
@@ -58,10 +59,11 @@ function analyzeTrend(candles, indicators, structure) {
     totalScore += priceVsEma.score;
     totalScore += recentHighsLows.score;
     let trend;
-    if (totalScore >= BULLISH_THRESHOLD) {
+    const rangeNeedsConfirmation = structure.trend === 'range' && Math.abs(totalScore) < RANGE_OVERRIDE_THRESHOLD;
+    if (!rangeNeedsConfirmation && totalScore >= BULLISH_THRESHOLD) {
         trend = 'bullish';
     }
-    else if (totalScore <= BEARISH_THRESHOLD) {
+    else if (!rangeNeedsConfirmation && totalScore <= BEARISH_THRESHOLD) {
         trend = 'bearish';
     }
     else {

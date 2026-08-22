@@ -12,7 +12,9 @@ function isInZone(currentPrice, zoneLow, zoneHigh) {
 }
 function isNearResistance(currentPrice, resistances) {
     for (const level of resistances) {
-        if (isInZone(currentPrice, level.zoneLow, level.zoneHigh) || currentPrice < level.zoneLow) {
+        const zoneWidth = Math.max(level.zoneHigh - level.zoneLow, Number.EPSILON);
+        const distanceToZone = currentPrice < level.zoneLow ? level.zoneLow - currentPrice : currentPrice > level.zoneHigh ? currentPrice - level.zoneHigh : 0;
+        if (distanceToZone <= zoneWidth * 2.5) {
             return true;
         }
     }
@@ -20,11 +22,19 @@ function isNearResistance(currentPrice, resistances) {
 }
 function isNearSupport(currentPrice, supports) {
     for (const level of supports) {
-        if (isInZone(currentPrice, level.zoneLow, level.zoneHigh) || currentPrice > level.zoneHigh) {
+        const zoneWidth = Math.max(level.zoneHigh - level.zoneLow, Number.EPSILON);
+        const distanceToZone = currentPrice < level.zoneLow ? level.zoneLow - currentPrice : currentPrice > level.zoneHigh ? currentPrice - level.zoneHigh : 0;
+        if (distanceToZone <= zoneWidth * 2.5) {
             return true;
         }
     }
     return false;
+}
+function isAtOrAboveResistance(currentPrice, resistances) {
+    return resistances.some((level) => currentPrice >= level.zoneLow);
+}
+function isAtOrBelowSupport(currentPrice, supports) {
+    return supports.some((level) => currentPrice <= level.zoneHigh);
 }
 function hasRecentBOS(structure) {
     return structure.events.some((e) => e.type === 'break_of_structure' || e.type === 'change_of_character');
@@ -150,7 +160,7 @@ exports.SETUP_DEFINITIONS = [
         setupName: 'Bullish Breakout',
         direction: 'bullish',
         conditions: [
-            { key: 'nearResistance', label: 'Price at or above resistance', check: (ctx) => isNearResistance(ctx.currentPrice, ctx.supportResistance.resistances) },
+            { key: 'nearResistance', label: 'Price at or above resistance', check: (ctx) => isAtOrAboveResistance(ctx.currentPrice, ctx.supportResistance.resistances) },
             { key: 'hasBOS', label: 'Recent break of structure', check: (ctx) => hasRecentBOS(ctx.structure) },
             { key: 'volatilityNormalOrHigh', label: 'Volatility normal or high', check: (ctx) => ctx.volatility.classification === 'normal' || ctx.volatility.classification === 'high' },
         ],
@@ -163,7 +173,7 @@ exports.SETUP_DEFINITIONS = [
         setupName: 'Bearish Breakout',
         direction: 'bearish',
         conditions: [
-            { key: 'nearSupport', label: 'Price at or below support', check: (ctx) => isNearSupport(ctx.currentPrice, ctx.supportResistance.supports) },
+            { key: 'nearSupport', label: 'Price at or below support', check: (ctx) => isAtOrBelowSupport(ctx.currentPrice, ctx.supportResistance.supports) },
             { key: 'hasBOS', label: 'Recent break of structure', check: (ctx) => hasRecentBOS(ctx.structure) },
             { key: 'volatilityNormalOrHigh', label: 'Volatility normal or high', check: (ctx) => ctx.volatility.classification === 'normal' || ctx.volatility.classification === 'high' },
         ],
@@ -317,6 +327,15 @@ function detectSetups(ctx) {
 function rankAndFilterSetups(setups, ctx) {
     let filtered = filterOppositeBreakouts(setups);
     const consensus = consensusDirection(ctx);
+    const analysisDirection = ctx.multiTimeframe.analysis.trend;
+    // Do not present an opposite continuation as a peer candidate when the
+    // analysis timeframe has a directional trend. It is not confirmation; it
+    // is an unresolved counter-signal and belongs in the missing-evidence text.
+    if (analysisDirection === 'bullish' || analysisDirection === 'bearish') {
+        filtered = filtered.filter((setup) => !setup.setup.includes('Trend Continuation') ||
+            setup.direction === analysisDirection ||
+            setup.conditionsMetCount === setup.conditionsTotal);
+    }
     if (consensus !== 'neutral') {
         const aligned = filtered.filter((s) => s.direction === consensus);
         const opposed = filtered.filter((s) => s.direction !== consensus);
