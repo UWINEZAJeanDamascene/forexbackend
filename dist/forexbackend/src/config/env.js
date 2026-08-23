@@ -44,6 +44,8 @@ function getEnv() {
         aiFallbackApiKey: process.env.AI_FALLBACK_API_KEY || undefined,
         aiFallbackApiUrl: process.env.AI_FALLBACK_API_URL || undefined,
         aiFallbackModel: process.env.AI_FALLBACK_MODEL || undefined,
+        resendApiKey: process.env.RESEND_API_KEY || undefined,
+        authEmailFrom: process.env.AUTH_EMAIL_FROM || undefined,
     };
 }
 /**

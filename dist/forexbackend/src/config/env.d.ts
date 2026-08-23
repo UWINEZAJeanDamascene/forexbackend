@@ -18,6 +18,8 @@ export interface EnvConfig {
     aiFallbackApiKey: string | undefined;
     aiFallbackApiUrl: string | undefined;
     aiFallbackModel: string | undefined;
+    resendApiKey: string | undefined;
+    authEmailFrom: string | undefined;
 }
 export declare function getEnv(): EnvConfig;
 export declare function logEnvStatus(config: EnvConfig): void;

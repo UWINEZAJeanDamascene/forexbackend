@@ -22,7 +22,7 @@ exports.ALL_SYMBOLS = [
 /** All spec instruments are enabled. */
 exports.ENABLED_SYMBOLS = [...exports.ALL_SYMBOLS];
 exports.ALL_TIMEFRAMES = ['5m', '15m', '30m', '1H', '4H', '1D'];
-/** Spec says: start with 1H and 4H only. Now extended to include 5m, 15m, 30m. */
+/** All supported chart timeframes are enabled. */
 exports.ENABLED_TIMEFRAMES = ['5m', '15m', '30m', '1H', '4H', '1D'];
 /** Duration of one candle for each timeframe, in minutes. */
 exports.TIMEFRAME_MINUTES = {

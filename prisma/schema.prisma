@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String?   @unique
+  createdAt DateTime  @default(now())
+  analyses  Analysis[]
+  loginTokens EmailLoginToken[]
+}
+
+model EmailLoginToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  sourceUserId String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model Analysis {
+  id                      String    @id @default(cuid())
+  userId                  String?
+  user                    User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  symbol                  String
+  timeframe               String
+  status                  String    @default("complete")
+  analysisTimestamp       DateTime  @default(now())
+  marketDataTimestamp     DateTime?
+  snapshotKey             String?
+  historicalCandles       Json?
+  currentPrice            Float
+  dataProvider            String
+  dataFreshnessMs         Int?
+
+  trend                   String
+  trendStrength           String?
+  trendScore              Int?
+  trendFactors            Json?
+
+  momentum                String
+  momentumScore           Int?
+  momentumStrength        String?
+
+  volatility              String
+  volatilityClassification String?
+  volatilityScore         Int?
+
+  structureTrend          String
+  structureTrendQualifier String?
+  higherHighsCount        Int
+  higherLowsCount         Int
+  lowerHighsCount         Int
+  lowerLowsCount          Int
+
+  confidenceScore         Int
+  confidenceBand          String?
+
+  tradeQualityVerdict     String?
+  tradeQualityReasons     Json?
+
+  setupName               String?
+  setupDirection          String?
+  setupStrength           Int?
+  setupConditionsMet      Json?
+  setupConditionsMissing  Json?
+  setupInvalidation       String?
+  setups                  Json?
+
+  aiExplanation           String?
+  aiProvider              String?
+  aiAvailable             Boolean   @default(false)
+  aiStructured            Json?
+  aiDisclaimer            String?
+
+  engineVersion           String?
+
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  indicators              IndicatorSnapshot[]
+  structureSnapshots      MarketStructureSnapshot[]
+  srLevels                SupportResistanceSnapshot[]
+
+  @@index([userId, symbol, timeframe, analysisTimestamp])
+  @@index([symbol, timeframe, analysisTimestamp])
+  @@index([analysisTimestamp])
+  @@unique([userId, snapshotKey])
+}
+
+model IndicatorSnapshot {
+  id          String    @id @default(cuid())
+  analysisId  String
+  analysis    Analysis  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  type        String
+  period      Int?
+  value       Float?
+  upperBand   Float?
+  middleBand  Float?
+  lowerBand   Float?
+  macdLine    Float?
+  signalLine  Float?
+  histogram   Float?
+
+  createdAt   DateTime  @default(now())
+
+  @@index([analysisId])
+}
+
+model MarketStructureSnapshot {
+  id                    String    @id @default(cuid())
+  analysisId            String
+  analysis              Analysis  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  trend                 String
+  trendQualifier        String?
+  events                Json?
+  latestEventType       String?
+  latestEventPrice      Float?
+  latestEventTimestamp  DateTime?
+
+  createdAt             DateTime  @default(now())
+
+  @@index([analysisId])
+}
+
+model SupportResistanceSnapshot {
+  id                String    @id @default(cuid())
+  analysisId        String
+  analysis          Analysis  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  type              String
+  price             Float
+  zoneLow           Float?
+  zoneHigh          Float?
+  strength          Int
+  touches           Int?
+  lastReactionTime  DateTime?
+
+  createdAt         DateTime  @default(now())
+
+  @@index([analysisId])
+}

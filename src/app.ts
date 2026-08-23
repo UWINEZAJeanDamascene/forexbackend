@@ -14,6 +14,9 @@ import setupsRoutes from './routes/setups.routes';
 import confidenceRoutes from './routes/confidence.routes';
 import riskRoutes from './routes/risk.routes';
 import aiRoutes from './routes/ai.routes';
+import historyRoutes from './routes/history.routes';
+import { requireHistorySession } from './middleware/historyAuth';
+import authRoutes from './routes/auth.routes';
 
 export function createApp(): Application {
   const app = express();
@@ -21,6 +24,7 @@ export function createApp(): Application {
   app.use(
     cors({
       origin: env.frontendUrl,
+      credentials: true,
     })
   );
   app.use(express.json());
@@ -38,6 +42,8 @@ export function createApp(): Application {
   app.use('/api/analysis', confidenceRoutes);
   app.use('/api/analysis', riskRoutes);
   app.use('/api/analysis', aiRoutes);
+  app.use('/api/analysis', requireHistorySession, historyRoutes);
+  app.use('/api/auth', requireHistorySession, authRoutes);
 
   // Future routers (Phase 24 onward) will mount here, e.g.:
   // app.use('/api/analysis', analysisRoutes);

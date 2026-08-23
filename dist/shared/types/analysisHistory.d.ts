@@ -1,0 +1,190 @@
+export interface SaveAnalysisRequest {
+    symbol: string;
+    timeframe: string;
+    status?: 'complete' | 'incomplete' | 'error';
+    analysisTimestamp: string;
+    marketDataTimestamp?: string;
+    historicalCandles?: Array<{
+        timestamp: string;
+        open: number;
+        high: number;
+        low: number;
+        close: number;
+        volume?: number | null;
+    }>;
+    currentPrice: number;
+    dataProvider: string;
+    dataFreshnessMs?: number;
+    trend: string;
+    trendStrength?: string | null;
+    trendScore?: number;
+    trendFactors?: Record<string, unknown>;
+    momentum: string;
+    momentumScore?: number;
+    momentumStrength?: string | null;
+    volatility: string;
+    volatilityClassification?: string | null;
+    volatilityScore?: number;
+    structureTrend: string;
+    structureTrendQualifier?: string | null;
+    higherHighsCount: number;
+    higherLowsCount: number;
+    lowerHighsCount: number;
+    lowerLowsCount: number;
+    confidenceScore: number;
+    confidenceBand?: string | null;
+    tradeQualityVerdict?: string | null;
+    tradeQualityReasons?: string[];
+    setupName?: string | null;
+    setupDirection?: string | null;
+    setupStrength?: number;
+    setupConditionsMet?: string[];
+    setupConditionsMissing?: string[];
+    setupInvalidation?: string | null;
+    setups?: unknown[];
+    aiExplanation?: string | null;
+    aiProvider?: string | null;
+    aiAvailable?: boolean;
+    aiStructured?: unknown;
+    aiDisclaimer?: string | null;
+    engineVersion?: string;
+    indicators?: Array<{
+        type: string;
+        period?: number;
+        value?: number;
+        upperBand?: number;
+        middleBand?: number;
+        lowerBand?: number;
+        macdLine?: number;
+        signalLine?: number;
+        histogram?: number;
+    }>;
+    structureSnapshot?: {
+        trend: string;
+        trendQualifier?: string | null;
+        events?: unknown[];
+        latestEventType?: string | null;
+        latestEventPrice?: number;
+        latestEventTimestamp?: string;
+    };
+    srLevels?: Array<{
+        type: string;
+        price: number;
+        zoneLow?: number;
+        zoneHigh?: number;
+        strength: number;
+        touches?: number;
+        lastReactionTime?: string;
+    }>;
+}
+export interface AnalysisHistoryItem {
+    id: string;
+    symbol: string;
+    timeframe: string;
+    status: 'complete' | 'incomplete' | 'error';
+    analysisTimestamp: string;
+    currentPrice: number;
+    dataProvider: string;
+    trend: string;
+    confidenceScore: number;
+    confidenceBand?: string;
+    createdAt: string;
+}
+export interface AnalysisHistoryResponse {
+    analyses: AnalysisHistoryItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+}
+export interface AnalysisDetailResponse {
+    id: string;
+    symbol: string;
+    timeframe: string;
+    status: 'complete' | 'incomplete' | 'error';
+    analysisTimestamp: string;
+    marketDataTimestamp?: string;
+    historicalCandles?: Array<{
+        timestamp: string;
+        open: number;
+        high: number;
+        low: number;
+        close: number;
+        volume?: number | null;
+    }>;
+    currentPrice: number;
+    dataProvider: string;
+    dataFreshnessMs?: number;
+    trend: string;
+    trendStrength?: string;
+    trendScore?: number;
+    trendFactors?: Record<string, unknown>;
+    momentum: string;
+    momentumScore?: number;
+    momentumStrength?: string;
+    volatility: string;
+    volatilityClassification?: string;
+    volatilityScore?: number;
+    structureTrend: string;
+    structureTrendQualifier?: string;
+    higherHighsCount: number;
+    higherLowsCount: number;
+    lowerHighsCount: number;
+    lowerLowsCount: number;
+    confidenceScore: number;
+    confidenceBand?: string;
+    tradeQualityVerdict?: string;
+    tradeQualityReasons?: string[];
+    setupName?: string;
+    setupDirection?: string;
+    setupStrength?: number;
+    setupConditionsMet?: string[];
+    setupConditionsMissing?: string[];
+    setupInvalidation?: string;
+    setups?: Record<string, unknown>[];
+    aiExplanation?: string;
+    aiProvider?: string;
+    aiAvailable: boolean;
+    aiStructured?: Record<string, unknown>;
+    aiDisclaimer?: string;
+    engineVersion?: string;
+    indicators: Array<{
+        id: string;
+        type: string;
+        period?: number;
+        value?: number;
+        upperBand?: number;
+        middleBand?: number;
+        lowerBand?: number;
+        macdLine?: number;
+        signalLine?: number;
+        histogram?: number;
+    }>;
+    structureSnapshot?: {
+        id: string;
+        trend: string;
+        trendQualifier?: string;
+        events?: Record<string, unknown>[];
+        latestEventType?: string;
+        latestEventPrice?: number;
+        latestEventTimestamp?: string;
+    };
+    srLevels: Array<{
+        id: string;
+        type: string;
+        price: number;
+        zoneLow?: number;
+        zoneHigh?: number;
+        strength: number;
+        touches?: number;
+        lastReactionTime?: string;
+    }>;
+    createdAt: string;
+    updatedAt: string;
+}
+export interface SaveAnalysisResponse {
+    id: string;
+    symbol: string;
+    timeframe: string;
+    analysisTimestamp: string;
+    message: string;
+}

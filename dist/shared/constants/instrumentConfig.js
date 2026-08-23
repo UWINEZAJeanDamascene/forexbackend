@@ -9,9 +9,9 @@ exports.getInstrumentConfig = getInstrumentConfig;
 exports.INSTRUMENT_CONFIG = {
     'EUR/USD': { pipValue: 0.0001, lotSize: 100000, minStopDistancePips: 2, name: 'EUR/USD' },
     'GBP/USD': { pipValue: 0.0001, lotSize: 100000, minStopDistancePips: 2, name: 'GBP/USD' },
-    'USD/JPY': { pipValue: 0.01, lotSize: 100000, minStopDistancePips: 2, name: 'USD/JPY' },
-    'GBP/JPY': { pipValue: 0.01, lotSize: 100000, minStopDistancePips: 2, name: 'GBP/JPY' },
-    'EUR/JPY': { pipValue: 0.01, lotSize: 100000, minStopDistancePips: 2, name: 'EUR/JPY' },
+    'USD/JPY': { pipValue: 0.01, lotSize: 100000, minStopDistancePips: 1, name: 'USD/JPY' },
+    'GBP/JPY': { pipValue: 0.01, lotSize: 100000, minStopDistancePips: 1, name: 'GBP/JPY' },
+    'EUR/JPY': { pipValue: 0.01, lotSize: 100000, minStopDistancePips: 1, name: 'EUR/JPY' },
     'USD/CHF': { pipValue: 0.0001, lotSize: 100000, minStopDistancePips: 2, name: 'USD/CHF' },
     'AUD/USD': { pipValue: 0.0001, lotSize: 100000, minStopDistancePips: 2, name: 'AUD/USD' },
     'USD/CAD': { pipValue: 0.0001, lotSize: 100000, minStopDistancePips: 2, name: 'USD/CAD' },

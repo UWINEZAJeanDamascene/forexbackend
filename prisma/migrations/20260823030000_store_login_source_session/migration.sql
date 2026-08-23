@@ -1,0 +1,1 @@
+ALTER TABLE "EmailLoginToken" ADD COLUMN "sourceUserId" TEXT;
