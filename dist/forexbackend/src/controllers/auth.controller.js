@@ -12,7 +12,7 @@ async function requestLogin(req, res) {
         return;
     }
     try {
-        await (0, emailAuthService_1.requestEmailLogin)(email);
+        await (0, emailAuthService_1.requestEmailLogin)(email, req.historyUserId);
         res.status(202).json({ message: 'If that email can receive messages, a sign-in link has been sent.' });
     }
     catch (error) {

@@ -1,0 +1,3 @@
+ALTER TABLE "BacktestRun" ADD COLUMN "attempts" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "BacktestRun" ADD COLUMN "nextAttemptAt" TIMESTAMP(3);
+ALTER TABLE "BacktestRun" ADD COLUMN "startedAt" TIMESTAMP(3);

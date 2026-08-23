@@ -5,6 +5,7 @@ import { MarketStructureResult } from '../../../../shared/types/marketStructure'
 import { VolatilityAnalysisResult } from '../../../../shared/types/volatilityAnalysis';
 import { SupportResistanceResponse } from '../../../../shared/types/supportResistance';
 import { DetectedSetup } from '../../../../shared/types/setupDetection';
+import { MultiTimeframeAnalysis } from '../../../../shared/types/multiTimeframeAnalysis';
 
 function makeTrend(overrides: Partial<TrendAnalysisResult> = {}): TrendAnalysisResult {
   return {
@@ -77,6 +78,48 @@ function makeSetups(setups: DetectedSetup[]): DetectedSetup[] {
 }
 
 describe('computeRiskAnalysis', () => {
+  it('returns wait with explicit blockers when resistance is nearby and MTF is mixed', () => {
+    const multiTimeframe: MultiTimeframeAnalysis = {
+      symbol: 'EUR/USD',
+      analysisTimeframe: '1H',
+      higherTimeframe: { timeframe: '4H', trend: 'neutral', score: 46, strength: 'weak', status: 'ok', analyzedAt: '' },
+      analysis: { timeframe: '1H', trend: 'bullish', score: 55, strength: 'moderate', status: 'ok', analyzedAt: '' },
+      lowerTimeframe: { timeframe: '15m', trend: 'bullish', score: 51, strength: 'moderate', status: 'ok', analyzedAt: '' },
+      alignment: 'mixed',
+      possiblePattern: null,
+      explanation: '',
+    };
+    const result = computeRiskAnalysis({
+      trend: makeTrend({ score: 85 }),
+      structure: makeStructure(),
+      volatility: makeVolatility({ currentAtr: 0.006 }),
+      supportResistance: makeSR(),
+      setups: makeSetups([]),
+      momentum: {
+        momentum: 'neutral',
+        strength: 'weak',
+        score: -5,
+        rawScore: -5,
+        counterTrend: false,
+        counterTrendExplanation: '',
+        trendContext: 'bullish',
+        divergence: null,
+        momentumLean: null,
+        adjustmentFactor: 1,
+        adjustmentReason: '',
+        components: { rsi: { score: 0, explanation: '', raw: {} }, macd: { score: 0, explanation: '', raw: {} }, priceMovement: { score: 0, explanation: '', raw: {} } },
+        dataQuality: { sufficient: true, candleCount: 100, minimumRequired: 60 },
+      },
+      multiTimeframe,
+      currentPrice: 1.1050,
+    });
+
+    expect(result.decision.state).toBe('wait');
+    expect(result.decision.trendScore).toBe(85);
+    expect(result.decision.entryQualityScore).toBeLessThan(result.decision.trendScore);
+    expect(result.decision.rejectionReasons).toEqual(expect.arrayContaining(['4H neutral', 'momentum weakening', 'resistance too close']));
+  });
+
   it('returns nearby support and resistance with ATR-normalized distances', () => {
     const result = computeRiskAnalysis({
       trend: makeTrend(),

@@ -1,4 +1,5 @@
 import { prisma } from '../database/prisma';
+import { Prisma } from '@prisma/client';
 import { ANALYSIS_ENGINE_VERSION } from '@shared/constants/analysisEngineVersion';
 import { SaveAnalysisRequest, AnalysisHistoryResponse, AnalysisDetailResponse } from '@shared/types/analysisHistory';
 import { createLogger } from '../utils/logger';
@@ -97,14 +98,14 @@ export async function saveAnalysis(request: SaveAnalysisRequest, userId: string)
               })) }
             : undefined,
           structureSnapshots: request.structureSnapshot
-            ? { create: {
+            ? { create: [{
                 trend: request.structureSnapshot.trend,
                 trendQualifier: request.structureSnapshot.trendQualifier ?? null,
-                events: request.structureSnapshot.events ?? undefined,
+                events: request.structureSnapshot.events ? request.structureSnapshot.events as Prisma.InputJsonValue : undefined,
                 latestEventType: request.structureSnapshot.latestEventType ?? null,
                 latestEventPrice: request.structureSnapshot.latestEventPrice ?? null,
                 latestEventTimestamp: request.structureSnapshot.latestEventTimestamp ? new Date(request.structureSnapshot.latestEventTimestamp) : null,
-              } }
+              }] }
             : undefined,
           srLevels: request.srLevels && request.srLevels.length > 0
             ? { create: request.srLevels.map((level) => ({
@@ -119,7 +120,7 @@ export async function saveAnalysis(request: SaveAnalysisRequest, userId: string)
             : undefined,
         },
       }),
-    ]);
+    ], { timeout: 15_000 });
 
     return { id: result[1].id };
   } catch (error) {

@@ -54,6 +54,19 @@ describe('getValidatedCandles', () => {
     expect(provider.getCandles).toHaveBeenCalledWith('EUR/USD', '1H', 50);
   });
 
+  it('excludes an unfinished candle even when only two candles are available', async () => {
+    const provider = fakeProvider([
+      makeCandle(new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()),
+      makeCandle(new Date(Date.now() - 5 * 60 * 1000).toISOString()),
+    ]);
+
+    const result = await getValidatedCandles('EUR/USD', '1H', { provider });
+
+    expect(result.candles).toHaveLength(2);
+    expect(result.analysisCandles).toHaveLength(1);
+    expect(result.analysisCandles[0].timestamp).not.toBe(result.candles[1].timestamp);
+  });
+
   it('coalesces concurrent requests for the same daily snapshot', async () => {
     let resolveRequest!: (candles: Candle[]) => void;
     const provider = fakeProvider([]);

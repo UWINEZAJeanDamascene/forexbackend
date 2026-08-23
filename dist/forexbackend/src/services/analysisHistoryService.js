@@ -108,14 +108,14 @@ async function saveAnalysis(request, userId) {
                             })) }
                         : undefined,
                     structureSnapshots: request.structureSnapshot
-                        ? { create: {
-                                trend: request.structureSnapshot.trend,
-                                trendQualifier: request.structureSnapshot.trendQualifier ?? null,
-                                events: request.structureSnapshot.events ?? undefined,
-                                latestEventType: request.structureSnapshot.latestEventType ?? null,
-                                latestEventPrice: request.structureSnapshot.latestEventPrice ?? null,
-                                latestEventTimestamp: request.structureSnapshot.latestEventTimestamp ? new Date(request.structureSnapshot.latestEventTimestamp) : null,
-                            } }
+                        ? { create: [{
+                                    trend: request.structureSnapshot.trend,
+                                    trendQualifier: request.structureSnapshot.trendQualifier ?? null,
+                                    events: request.structureSnapshot.events ? request.structureSnapshot.events : undefined,
+                                    latestEventType: request.structureSnapshot.latestEventType ?? null,
+                                    latestEventPrice: request.structureSnapshot.latestEventPrice ?? null,
+                                    latestEventTimestamp: request.structureSnapshot.latestEventTimestamp ? new Date(request.structureSnapshot.latestEventTimestamp) : null,
+                                }] }
                         : undefined,
                     srLevels: request.srLevels && request.srLevels.length > 0
                         ? { create: request.srLevels.map((level) => ({
@@ -130,7 +130,7 @@ async function saveAnalysis(request, userId) {
                         : undefined,
                 },
             }),
-        ]);
+        ], { timeout: 15_000 });
         return { id: result[1].id };
     }
     catch (error) {

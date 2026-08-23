@@ -18,7 +18,8 @@ const ATR_PERIOD = 14;
 
 export function detectMarketStructure(
   candles: Candle[],
-  swingWindow = DEFAULT_SWING_WINDOW
+  swingWindow = DEFAULT_SWING_WINDOW,
+  options: { confirmedSwingOnly?: boolean } = {}
 ): MarketStructureResponse {
   if (candles.length < swingWindow * 2 + 1) {
     return {
@@ -40,8 +41,8 @@ export function detectMarketStructure(
     };
   }
 
-  const rawHighs = findSwingHighs(candles, swingWindow);
-  const rawLows = findSwingLows(candles, swingWindow);
+  const rawHighs = findSwingHighs(candles, swingWindow, options.confirmedSwingOnly ?? false);
+  const rawLows = findSwingLows(candles, swingWindow, options.confirmedSwingOnly ?? false);
 
   const atrValues = atr(candles, ATR_PERIOD);
   const currentAtr = lastNonNil(atrValues);
@@ -115,11 +116,12 @@ export function detectStructureEvents(
   return result.structure.events;
 }
 
-function findSwingHighs(candles: Candle[], window: number): SwingPoint[] {
+function findSwingHighs(candles: Candle[], window: number, confirmedSwingOnly: boolean): SwingPoint[] {
   const swings: SwingPoint[] = [];
   const len = candles.length;
 
   for (let i = window; i < len; i++) {
+    if (confirmedSwingOnly && i + window >= len) continue;
     const currentHigh = candles[i].high;
     let isSwingHigh = true;
 
@@ -138,6 +140,7 @@ function findSwingHighs(candles: Candle[], window: number): SwingPoint[] {
         timestamp: candles[i].timestamp,
         price: currentHigh,
         index: i,
+        confirmationTimestamp: candles[i + window]?.timestamp,
       });
     }
   }
@@ -145,11 +148,12 @@ function findSwingHighs(candles: Candle[], window: number): SwingPoint[] {
   return swings;
 }
 
-function findSwingLows(candles: Candle[], window: number): SwingPoint[] {
+function findSwingLows(candles: Candle[], window: number, confirmedSwingOnly: boolean): SwingPoint[] {
   const swings: SwingPoint[] = [];
   const len = candles.length;
 
   for (let i = window; i < len; i++) {
+    if (confirmedSwingOnly && i + window >= len) continue;
     const currentLow = candles[i].low;
     let isSwingLow = true;
 
@@ -168,6 +172,7 @@ function findSwingLows(candles: Candle[], window: number): SwingPoint[] {
         timestamp: candles[i].timestamp,
         price: currentLow,
         index: i,
+        confirmationTimestamp: candles[i + window]?.timestamp,
       });
     }
   }

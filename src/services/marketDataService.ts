@@ -85,7 +85,7 @@ function rejectFutureLastCandle(candles: Candle[], timeframe: Timeframe, context
 }
 
 function getClosedAnalysisCandles(candles: Candle[], timeframe: Timeframe): Candle[] {
-  if (candles.length < 3) return candles;
+  if (candles.length === 0) return candles;
   const lastTimestamp = new Date(candles[candles.length - 1].timestamp).getTime();
   const lastIsClosed = Number.isFinite(lastTimestamp) && Date.now() - lastTimestamp >= timeframeToMs(timeframe);
   return lastIsClosed ? candles : candles.slice(0, -1);

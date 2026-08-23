@@ -12,6 +12,7 @@ model User {
   createdAt DateTime  @default(now())
   analyses  Analysis[]
   loginTokens EmailLoginToken[]
+  backtests  BacktestRun[]
 }
 
 model EmailLoginToken {
@@ -96,6 +97,89 @@ model Analysis {
   @@index([symbol, timeframe, analysisTimestamp])
   @@index([analysisTimestamp])
   @@unique([userId, snapshotKey])
+}
+
+model BacktestRun {
+  id              String          @id @default(cuid())
+  userId          String?
+  user            User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  status          String          @default("queued")
+  attempts        Int             @default(0)
+  nextAttemptAt   DateTime?
+  startedAt       DateTime?
+  symbol          String
+  timeframe       String
+  startDate       DateTime
+  endDate         DateTime
+  strategyName    String
+  config          Json
+  dataProvider    String
+  dataSource      String?
+  dataVersion     String?
+  indicatorParameters Json?
+  marketStructureParameters Json?
+  executionAssumptions Json?
+  initialBalance  Float
+  riskPercent     Float
+  metrics         Json?
+  warnings        Json?
+  equityCurve     Json?
+  drawdownCurve   Json?
+  periodResults   Json?
+  error           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  completedAt     DateTime?
+
+  trades          BacktestTrade[]
+  equitySnapshots EquitySnapshot[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model BacktestTrade {
+  id                    String      @id @default(cuid())
+  backtestId            String
+  backtest              BacktestRun @relation(fields: [backtestId], references: [id], onDelete: Cascade)
+  symbol                String
+  timeframe             String
+  direction             String
+  setupTimestamp        DateTime
+  entryTimestamp        DateTime
+  exitTimestamp         DateTime?
+  entryPrice            Float
+  stopPrice             Float
+  targetPrice           Float
+  exitPrice             Float?
+  positionSize          Float
+  plannedRiskReward     Float
+  realizedPnl           Float?
+  realizedR             Float?
+  result                String
+  holdingMinutes        Float?
+  exitReason            String
+  setupConditions       Json
+  setupSnapshot         Json
+  createdAt             DateTime    @default(now())
+
+  @@index([backtestId, entryTimestamp])
+  @@index([backtestId, result])
+}
+
+model EquitySnapshot {
+  id                String      @id @default(cuid())
+  backtestId        String
+  backtest          BacktestRun @relation(fields: [backtestId], references: [id], onDelete: Cascade)
+  timestamp         DateTime
+  balance           Float
+  equity            Float
+  peakEquity        Float
+  drawdown          Float
+  drawdownPercent   Float
+
+  @@unique([backtestId, timestamp])
+  @@index([backtestId, timestamp])
 }
 
 model IndicatorSnapshot {

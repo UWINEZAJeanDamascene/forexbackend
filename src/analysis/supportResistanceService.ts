@@ -4,6 +4,7 @@ import { SupportResistanceResponse } from '../../shared/types/supportResistance'
 
 export interface GetSupportResistanceOptions {
   swingWindow?: number;
+  confirmedSwingOnly?: boolean;
 }
 
 export function getSupportResistance(
@@ -11,5 +12,5 @@ export function getSupportResistance(
   options: GetSupportResistanceOptions = {}
 ): SupportResistanceResponse {
   const swingWindow = options.swingWindow ?? 2;
-  return detectSupportResistance(candles, swingWindow);
+  return detectSupportResistance(candles, swingWindow, { confirmedSwingOnly: options.confirmedSwingOnly });
 }

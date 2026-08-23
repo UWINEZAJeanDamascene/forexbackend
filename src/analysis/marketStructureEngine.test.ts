@@ -77,6 +77,13 @@ describe('detectMarketStructure', () => {
     expect(result.structure.lastSwingLow).not.toBeNull();
   });
 
+  it('can exclude swings without a complete confirmation window', () => {
+    const candles = makeCandles([1, 3, 2, 4, 3, 5]);
+    const result = detectMarketStructure(candles, 1, { confirmedSwingOnly: true });
+    expect(result.structure.swingHighs.every((swing) => swing.index + 1 < candles.length)).toBe(true);
+    expect(result.structure.swingLows.every((swing) => swing.index + 1 < candles.length)).toBe(true);
+  });
+
   it('returns empty structure for insufficient candles', () => {
     const candles = makeCandles([5, 4, 3, 2, 2]);
     const result = detectMarketStructure(candles, 2);
@@ -126,6 +133,15 @@ describe('detectStructureEvents', () => {
 });
 
 describe('swing size filtering', () => {
+  it('does not change earlier structure when future candles are modified', () => {
+    const candles = makeCandles([1, 3, 2, 4, 3, 5, 4, 6, 5]);
+    const before = detectMarketStructure(candles.slice(0, 6), 1, { confirmedSwingOnly: true }).structure;
+    candles[7].high = 99;
+    candles[8].low = 0.1;
+    const after = detectMarketStructure(candles.slice(0, 6), 1, { confirmedSwingOnly: true }).structure;
+    expect(after).toEqual(before);
+  });
+
   it('rejects swings that are too close in bar count', () => {
     const prices = [1, 3, 2, 3.5, 2.5, 4, 3.5, 5];
     const candles = makeCandles(prices);

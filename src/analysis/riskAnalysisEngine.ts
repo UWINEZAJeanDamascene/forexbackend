@@ -15,6 +15,7 @@ import {
   PositionSizingResult,
   VolatilityContext,
   ProximityLabel,
+  TradeDecisionSummary,
 } from '../../shared/types/riskAnalysis';
 import { calculatePositionSize as calculateSharedPositionSize } from '../../../shared/utils/positionSizing';
 
@@ -61,6 +62,14 @@ export function computeRiskAnalysis(params: {
     atr
   );
   const tradeQuality = assessTradeQuality(params.trend, params.structure, params.setups, riskRewardScenarios, params.volatility, params.momentum, params.multiTimeframe);
+  const decision = assessTradeDecision(
+    params.trend,
+    params.setups,
+    params.momentum,
+    params.multiTimeframe,
+    nearbySupport,
+    nearbyResistance,
+  );
 
   let positionSizing: PositionSizingResult | null = null;
   let positionSizingInput: { accountSize: number; maxRiskPercent: number } | null = null;
@@ -94,6 +103,7 @@ export function computeRiskAnalysis(params: {
     riskRewardScenarios,
     tradeQuality: tradeQuality.quality,
     tradeQualityReasons: tradeQuality.reasons,
+    decision,
     positionSizing,
     positionSizingInput,
     thresholds: {
@@ -102,6 +112,84 @@ export function computeRiskAnalysis(params: {
     },
     disclaimer: 'This reflects calculated distances between price and technical levels. It is not a probability of profit, a guaranteed outcome, or trading advice.',
     analyzedAt: new Date().toISOString(),
+  };
+}
+
+function assessTradeDecision(
+  trend: TrendAnalysisResult,
+  setups: DetectedSetup[],
+  momentum: MomentumAnalysisResult | undefined,
+  multiTimeframe: MultiTimeframeAnalysis | undefined,
+  nearbySupport: NearbyLevel | null,
+  nearbyResistance: NearbyLevel | null,
+): TradeDecisionSummary {
+  const trendScore = Math.max(0, Math.min(100, Math.round(trend.score)));
+  const direction = trend.trend === 'neutral'
+    ? setups[0]?.direction ?? 'bullish'
+    : trend.trend;
+  const reasons: string[] = [];
+
+  const alignment = multiTimeframe?.alignment;
+  const isMixedAlignment = alignment === 'mixed' || alignment === 'insufficient_data';
+  const relevantSnapshots = multiTimeframe
+    ? [multiTimeframe.higherTimeframe, multiTimeframe.analysis, multiTimeframe.lowerTimeframe]
+      .filter((snapshot) => snapshot !== null)
+    : [];
+
+  for (const snapshot of relevantSnapshots) {
+    if (snapshot.status === 'ok' && snapshot.trend === 'neutral') {
+      reasons.push(`${snapshot.timeframe} neutral`);
+    }
+  }
+
+  const directionalMomentum = momentum && momentum.momentum !== 'neutral';
+  const momentumWeakening = momentum && (
+    momentum.momentum === 'neutral' ||
+    momentum.strength !== 'strong' ||
+    (directionalMomentum && momentum.momentum !== direction)
+  );
+  if (momentumWeakening) reasons.push('momentum weakening');
+
+  const nearbyOpposingLevel = direction === 'bullish' ? nearbyResistance : nearbySupport;
+  if (direction === 'bullish' && nearbyResistance?.proximity === 'nearby') reasons.push('resistance too close');
+  if (direction === 'bearish' && nearbySupport?.proximity === 'nearby') reasons.push('support too close');
+  if (isMixedAlignment && !reasons.some((reason) => reason.includes('neutral'))) {
+    reasons.push('multi-timeframe alignment mixed');
+  }
+
+  const setupScore = setups.length > 0 ? Math.max(...setups.map((setup) => setup.strength)) : 0;
+  const alignmentScore = alignment === 'aligned_bullish' || alignment === 'aligned_bearish'
+    ? 100
+    : alignment === 'partially_aligned_bullish' || alignment === 'partially_aligned_bearish'
+      ? 70
+      : alignment === 'aligned_neutral'
+        ? 35
+        : alignment === 'mixed'
+          ? 25
+          : 0;
+  const momentumScore = !momentum ? 50 : momentum.momentum === direction
+    ? momentum.strength === 'strong' ? 100 : momentum.strength === 'moderate' ? 75 : 55
+    : momentum.momentum === 'neutral' ? 40 : 15;
+  const locationScore = nearbyOpposingLevel?.proximity === 'nearby'
+    ? 15
+    : nearbyOpposingLevel?.proximity === 'within_range'
+      ? 55
+      : 85;
+  const entryQualityScore = Math.round(
+    setupScore * 0.35 + alignmentScore * 0.25 + momentumScore * 0.20 + locationScore * 0.20,
+  );
+
+  const state: TradeDecisionSummary['state'] = reasons.length > 0
+    ? 'wait'
+    : entryQualityScore >= 70
+      ? 'ready'
+      : 'review';
+
+  return {
+    state,
+    trendScore,
+    entryQualityScore: Math.max(0, Math.min(100, entryQualityScore)),
+    rejectionReasons: reasons,
   };
 }
 

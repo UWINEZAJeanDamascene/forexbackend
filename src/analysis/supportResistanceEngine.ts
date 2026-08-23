@@ -32,7 +32,8 @@ const SOFT_LEVEL_ZONE_ATR = 0.35;
 
 export function detectSupportResistance(
   candles: Candle[],
-  swingWindow = DEFAULT_SWING_WINDOW
+  swingWindow = DEFAULT_SWING_WINDOW,
+  options: { confirmedSwingOnly?: boolean } = {}
 ): SupportResistanceResponse {
   if (candles.length < swingWindow * 2 + 1) {
     return {
@@ -44,8 +45,8 @@ export function detectSupportResistance(
     };
   }
 
-  const swingHighs = findSwingHighs(candles, swingWindow);
-  const swingLows = findSwingLows(candles, swingWindow);
+  const swingHighs = findSwingHighs(candles, swingWindow, options.confirmedSwingOnly ?? false);
+  const swingLows = findSwingLows(candles, swingWindow, options.confirmedSwingOnly ?? false);
 
   const atrValues = atr(candles, Math.min(ATR_PERIOD, Math.max(candles.length - 1, 1)));
   const currentAtr = lastNonNil(atrValues);
@@ -113,11 +114,12 @@ export function detectSupportResistance(
   };
 }
 
-function findSwingHighs(candles: Candle[], window: number): { price: number; timestamp: string; index: number }[] {
+function findSwingHighs(candles: Candle[], window: number, confirmedSwingOnly: boolean): { price: number; timestamp: string; index: number }[] {
   const swings: { price: number; timestamp: string; index: number }[] = [];
   const len = candles.length;
 
   for (let i = window; i < len; i++) {
+    if (confirmedSwingOnly && i + window >= len) continue;
     const currentHigh = candles[i].high;
     let isSwingHigh = true;
 
@@ -142,11 +144,12 @@ function findSwingHighs(candles: Candle[], window: number): { price: number; tim
   return swings;
 }
 
-function findSwingLows(candles: Candle[], window: number): { price: number; timestamp: string; index: number }[] {
+function findSwingLows(candles: Candle[], window: number, confirmedSwingOnly: boolean): { price: number; timestamp: string; index: number }[] {
   const swings: { price: number; timestamp: string; index: number }[] = [];
   const len = candles.length;
 
   for (let i = window; i < len; i++) {
+    if (confirmedSwingOnly && i + window >= len) continue;
     const currentLow = candles[i].low;
     let isSwingLow = true;
 

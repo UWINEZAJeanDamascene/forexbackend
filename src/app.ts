@@ -17,6 +17,7 @@ import aiRoutes from './routes/ai.routes';
 import historyRoutes from './routes/history.routes';
 import { requireHistorySession } from './middleware/historyAuth';
 import authRoutes from './routes/auth.routes';
+import backtestRoutes from './routes/backtest.routes';
 
 export function createApp(): Application {
   const app = express();
@@ -44,10 +45,10 @@ export function createApp(): Application {
   app.use('/api/analysis', aiRoutes);
   app.use('/api/analysis', requireHistorySession, historyRoutes);
   app.use('/api/auth', requireHistorySession, authRoutes);
+  app.use('/api/backtests', requireHistorySession, backtestRoutes);
 
   // Future routers (Phase 24 onward) will mount here, e.g.:
   // app.use('/api/analysis', analysisRoutes);
-  // app.use('/api/backtest', backtestRoutes);
 
   // 404 handler
   app.use((req: Request, res: Response) => {

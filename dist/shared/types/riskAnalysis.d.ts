@@ -1,5 +1,12 @@
 export type ProximityLabel = 'nearby' | 'within_range' | 'distant';
 export type TradeQuality = 'wait' | 'low' | 'moderate' | 'high';
+export type TradeDecisionState = 'wait' | 'review' | 'ready';
+export interface TradeDecisionSummary {
+    state: TradeDecisionState;
+    trendScore: number;
+    entryQualityScore: number;
+    rejectionReasons: string[];
+}
 export interface NearbyLevel {
     price: number;
     zoneRange: [number, number];
@@ -66,6 +73,7 @@ export interface RiskAnalysisResult {
     riskRewardScenarios: RiskRewardScenario[];
     tradeQuality: TradeQuality;
     tradeQualityReasons: string[];
+    decision: TradeDecisionSummary;
     positionSizing: PositionSizingResult | null;
     positionSizingInput: PositionSizingInput | null;
     thresholds: {

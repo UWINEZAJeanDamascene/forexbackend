@@ -8,7 +8,7 @@ const DEFAULT_SWING_WINDOW = 2;
 const MIN_SWING_BARS = 3;
 const ATR_MULTIPLIER = 1.0;
 const ATR_PERIOD = 14;
-function detectMarketStructure(candles, swingWindow = DEFAULT_SWING_WINDOW) {
+function detectMarketStructure(candles, swingWindow = DEFAULT_SWING_WINDOW, options = {}) {
     if (candles.length < swingWindow * 2 + 1) {
         return {
             symbol: '',
@@ -28,8 +28,8 @@ function detectMarketStructure(candles, swingWindow = DEFAULT_SWING_WINDOW) {
             },
         };
     }
-    const rawHighs = findSwingHighs(candles, swingWindow);
-    const rawLows = findSwingLows(candles, swingWindow);
+    const rawHighs = findSwingHighs(candles, swingWindow, options.confirmedSwingOnly ?? false);
+    const rawLows = findSwingLows(candles, swingWindow, options.confirmedSwingOnly ?? false);
     const atrValues = (0, atr_1.atr)(candles, ATR_PERIOD);
     const currentAtr = lastNonNil(atrValues);
     const filtered = filterSwingsBySize(rawHighs, rawLows, currentAtr, candles.length);
@@ -81,10 +81,12 @@ function detectStructureEvents(candles, swingWindow = DEFAULT_SWING_WINDOW) {
     const result = detectMarketStructure(candles, swingWindow);
     return result.structure.events;
 }
-function findSwingHighs(candles, window) {
+function findSwingHighs(candles, window, confirmedSwingOnly) {
     const swings = [];
     const len = candles.length;
     for (let i = window; i < len; i++) {
+        if (confirmedSwingOnly && i + window >= len)
+            continue;
         const currentHigh = candles[i].high;
         let isSwingHigh = true;
         for (let j = i - window; j <= i + window; j++) {
@@ -103,15 +105,18 @@ function findSwingHighs(candles, window) {
                 timestamp: candles[i].timestamp,
                 price: currentHigh,
                 index: i,
+                confirmationTimestamp: candles[i + window]?.timestamp,
             });
         }
     }
     return swings;
 }
-function findSwingLows(candles, window) {
+function findSwingLows(candles, window, confirmedSwingOnly) {
     const swings = [];
     const len = candles.length;
     for (let i = window; i < len; i++) {
+        if (confirmedSwingOnly && i + window >= len)
+            continue;
         const currentLow = candles[i].low;
         let isSwingLow = true;
         for (let j = i - window; j <= i + window; j++) {
@@ -130,6 +135,7 @@ function findSwingLows(candles, window) {
                 timestamp: candles[i].timestamp,
                 price: currentLow,
                 index: i,
+                confirmationTimestamp: candles[i + window]?.timestamp,
             });
         }
     }

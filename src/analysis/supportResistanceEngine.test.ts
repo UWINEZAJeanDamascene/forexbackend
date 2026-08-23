@@ -17,6 +17,15 @@ function makeCandlesWithTime(prices: number[]): Candle[] {
 }
 
 describe('detectSupportResistance', () => {
+  it('does not change earlier support or resistance when future candles change', () => {
+    const candles = makeCandlesWithTime([1, 5, 1, 5, 1, 6, 1, 6, 1]);
+    const before = detectSupportResistance(candles.slice(0, 7), 1);
+    candles[7].high = 100;
+    candles[8].low = 0.1;
+    const after = detectSupportResistance(candles.slice(0, 7), 1);
+    expect(after).toEqual(before);
+  });
+
   it('returns empty arrays when there are too few candles', () => {
     const candles = [makeCandle(1), makeCandle(2), makeCandle(3)];
     const result = detectSupportResistance(candles, 2);
