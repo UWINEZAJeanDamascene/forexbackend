@@ -113,15 +113,16 @@ export function computeConfidence(params: {
   }
 
   overallScore = Math.max(0, Math.min(100, overallScore));
-  const band = deriveBand(overallScore);
+  const { band, bandLabel } = deriveBand(overallScore);
 
-  const explanation = buildExplanation(overallScore, band, factors, warnings, unroundedTotal);
+  const explanation = buildExplanation(overallScore, bandLabel, factors, warnings, unroundedTotal);
 
   return {
     symbol: params.trend.symbol,
     timeframe: params.trend.timeframe,
     overallScore,
     band,
+    bandLabel,
     factors,
     warnings,
     explanation,
@@ -381,20 +382,24 @@ function checkOpposingSetups(setups: DetectedSetup[]): boolean {
   return hasSignificantBullish && hasSignificantBearish;
 }
 
-function deriveBand(score: number): ConfidenceBand {
-  if (score <= BAND_THRESHOLDS.low) return 'Low';
-  if (score <= BAND_THRESHOLDS.moderate) return 'Moderate';
-  return 'High';
+function deriveBand(score: number): { band: ConfidenceBand; bandLabel: string } {
+  if (score <= BAND_THRESHOLDS.low) {
+    return { band: 'Low', bandLabel: 'Weak agreement' };
+  }
+  if (score <= BAND_THRESHOLDS.moderate) {
+    return { band: 'Moderate', bandLabel: 'Mixed evidence' };
+  }
+  return { band: 'High', bandLabel: 'Strong agreement' };
 }
 
 function buildExplanation(
   score: number,
-  band: ConfidenceBand,
+  bandLabel: string,
   factors: ConfidenceFactor[],
   warnings: ConfidenceWarning[],
   unroundedTotal: number
 ): string {
-  const parts = [`Analysis Confidence: ${score}/100 — ${band}.`];
+  const parts = [`Evidence Agreement Index: ${score}/100 — ${bandLabel}.`];
 
   const breakdown = factors
     .map((f) => `${f.name}: ${f.score} × ${(f.weight * 100).toFixed(0)}% = ${f.contribution.toFixed(2)}`)

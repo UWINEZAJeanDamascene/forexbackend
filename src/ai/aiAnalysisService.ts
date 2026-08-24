@@ -322,18 +322,29 @@ function buildDeterministicFallback(context: AnalysisContext): AiStructuredOutpu
   const analysis = context.marketBias.analysis;
   const structure = context.marketStructure;
   const quality = context.tradeQuality;
+  const agreement = context.evidenceAgreement;
   const levels = context.supportResistance.slice(0, 6).map((level) => `${level.type}: ${level.price}`);
+  const waitSummary = quality.verdict === 'wait'
+    ? `Trade Quality is WAIT because ${quality.reasons[0] ?? 'directional evidence is not aligned'}.`
+    : `Trade Quality is ${quality.verdict.toUpperCase()}.`;
+  const agreementSummary = Number.isFinite(agreement.overallScore)
+    ? `Evidence agreement is ${agreement.overallScore}/100 (${agreement.bandLabel ?? agreement.band ?? 'mixed evidence'}) — this is not a win probability.`
+    : 'Evidence agreement is unavailable.';
+
   return {
-    summary: `Deterministic analysis is available. Trade Quality is ${quality.verdict.toUpperCase()}; AI explanation is unavailable.`,
-    trend: `${analysis.trend} (${analysis.strength}), score ${analysis.score}/100 on ${context.identity.timeframe}.`,
+    summary: `${waitSummary} ${agreementSummary} AI provider is unavailable; this cautious summary is generated from deterministic panels only.`,
+    trend: `${analysis.trend} (${analysis.strength}), score ${analysis.score}/100 on ${context.identity.timeframe}. Wait for confirmation before treating this as directional.`,
     momentum: `${context.momentum.momentum} momentum, score ${context.momentum.score}/100.`,
     marketStructure: `${structure.trend} structure with ${structure.higherHighsCount} higher highs and ${structure.higherLowsCount} higher lows.`,
     keyLevels: levels,
-    bullishScenario: 'A bullish scenario requires confirmation from the deterministic setup conditions.',
-    bearishScenario: 'A bearish scenario requires confirmation from the deterministic setup conditions.',
-    confirmationNeeded: ['Review the deterministic Trade Quality reasons before interpreting either scenario.'],
+    bullishScenario: 'One possible bullish scenario requires confirmation from deterministic setup conditions and a non-WAIT Trade Quality verdict.',
+    bearishScenario: 'One possible bearish scenario requires confirmation from deterministic setup conditions and a non-WAIT Trade Quality verdict.',
+    confirmationNeeded: [
+      'Trade Quality must move out of WAIT before any scenario is treated as actionable.',
+      ...quality.reasons.slice(0, 2),
+    ],
     invalidationConditions: context.risk.invalidationCandidates.slice(0, 4).map((candidate) => candidate.description),
-    riskFactors: [...quality.reasons, context.volatility.explanation],
-    confidence: Number.isFinite(context.evidenceAgreement.overallScore) ? context.evidenceAgreement.overallScore : 0,
+    riskFactors: [...quality.reasons, context.volatility.explanation].filter(Boolean),
+    confidence: Number.isFinite(agreement.overallScore) ? agreement.overallScore : 0,
   };
 }

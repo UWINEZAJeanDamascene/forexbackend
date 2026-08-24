@@ -17,7 +17,7 @@ function computeRiskAnalysis(params) {
     const invalidationCandidates = buildInvalidationCandidates(params, nearbySupport, nearbyResistance, atr);
     const riskRewardScenarios = buildRiskRewardScenarios(params.currentPrice, nearbySupport, nearbyResistance, invalidationCandidates, atr);
     const tradeQuality = assessTradeQuality(params.trend, params.structure, params.setups, riskRewardScenarios, params.volatility, params.momentum, params.multiTimeframe);
-    const decision = assessTradeDecision(params.trend, params.setups, riskRewardScenarios, params.momentum, params.multiTimeframe, nearbySupport, nearbyResistance);
+    const decision = assessTradeDecision(params.trend, params.setups, params.momentum, params.multiTimeframe, nearbySupport, nearbyResistance);
     let positionSizing = null;
     let positionSizingInput = null;
     if (params.accountSize !== undefined && params.maxRiskPercent !== undefined) {
@@ -50,7 +50,7 @@ function computeRiskAnalysis(params) {
         analyzedAt: new Date().toISOString(),
     };
 }
-function assessTradeDecision(trend, setups, scenarios, momentum, multiTimeframe, nearbySupport, nearbyResistance) {
+function assessTradeDecision(trend, setups, momentum, multiTimeframe, nearbySupport, nearbyResistance) {
     const trendScore = Math.max(0, Math.min(100, Math.round(trend.score)));
     const direction = trend.trend === 'neutral'
         ? setups[0]?.direction ?? 'bullish'

@@ -354,6 +354,8 @@ export function detectSetups(ctx: SetupContext): DetectedSetup[] {
       conditionsTotal: rule.conditions.length,
       invalidationCondition: invalidation,
       mtfIncomplete: false,
+      conditionsComplete: conditionsMet.length >= rule.conditions.length,
+      status: conditionsMet.length >= rule.conditions.length ? 'conditions_met' : 'candidate',
     });
   }
 

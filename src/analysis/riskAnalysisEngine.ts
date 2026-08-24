@@ -16,6 +16,7 @@ import {
   VolatilityContext,
   ProximityLabel,
   TradeDecisionSummary,
+  TradeQuality,
 } from '../../shared/types/riskAnalysis';
 import { calculatePositionSize as calculateSharedPositionSize } from '../../../shared/utils/positionSizing';
 
@@ -59,9 +60,22 @@ export function computeRiskAnalysis(params: {
     nearbySupport,
     nearbyResistance,
     invalidationCandidates,
-    atr
+    atr,
   );
-  const tradeQuality = assessTradeQuality(params.trend, params.structure, params.setups, riskRewardScenarios, params.volatility, params.momentum, params.multiTimeframe);
+  const tradeQuality = assessTradeQuality(
+    params.trend,
+    params.structure,
+    params.setups,
+    riskRewardScenarios,
+    params.volatility,
+    params.momentum,
+    params.multiTimeframe,
+  );
+  const annotatedRiskRewardScenarios = annotateRiskRewardScenarios(
+    riskRewardScenarios,
+    params.trend,
+    tradeQuality,
+  );
   const decision = assessTradeDecision(
     params.trend,
     params.setups,
@@ -69,6 +83,7 @@ export function computeRiskAnalysis(params: {
     params.multiTimeframe,
     nearbySupport,
     nearbyResistance,
+    tradeQuality,
   );
 
   let positionSizing: PositionSizingResult | null = null;
@@ -100,7 +115,7 @@ export function computeRiskAnalysis(params: {
     atr,
     volatilityContext,
     invalidationCandidates,
-    riskRewardScenarios,
+    riskRewardScenarios: annotatedRiskRewardScenarios,
     tradeQuality: tradeQuality.quality,
     tradeQualityReasons: tradeQuality.reasons,
     decision,
@@ -122,6 +137,7 @@ function assessTradeDecision(
   multiTimeframe: MultiTimeframeAnalysis | undefined,
   nearbySupport: NearbyLevel | null,
   nearbyResistance: NearbyLevel | null,
+  tradeQuality: { quality: TradeQuality; reasons: string[] },
 ): TradeDecisionSummary {
   const trendScore = Math.max(0, Math.min(100, Math.round(trend.score)));
   const direction = trend.trend === 'neutral'
@@ -175,20 +191,30 @@ function assessTradeDecision(
     : nearbyOpposingLevel?.proximity === 'within_range'
       ? 55
       : 85;
-  const entryQualityScore = Math.round(
+  const rawEntryQualityScore = Math.round(
     setupScore * 0.35 + alignmentScore * 0.25 + momentumScore * 0.20 + locationScore * 0.20,
   );
 
-  const state: TradeDecisionSummary['state'] = reasons.length > 0
+  const blocked = reasons.length > 0 || tradeQuality.quality === 'wait';
+  const state: TradeDecisionSummary['state'] = blocked
     ? 'wait'
-    : entryQualityScore >= 70
+    : rawEntryQualityScore >= 70
       ? 'ready'
       : 'review';
+
+  const entryQualityScore = blocked
+    ? Math.min(rawEntryQualityScore, 69)
+    : rawEntryQualityScore;
 
   return {
     state,
     trendScore,
+    rawEntryQualityScore: Math.max(0, Math.min(100, rawEntryQualityScore)),
     entryQualityScore: Math.max(0, Math.min(100, entryQualityScore)),
+    entryQualityBlocked: blocked,
+    entryQualityNote: blocked
+      ? 'Capped while Trade Quality is WAIT. Raw setup score is informational only and not actionable.'
+      : null,
     rejectionReasons: reasons,
   };
 }
@@ -501,6 +527,30 @@ function buildRiskRewardScenarios(
   }
 
   return scenarios;
+}
+
+function annotateRiskRewardScenarios(
+  scenarios: RiskRewardScenario[],
+  trend: TrendAnalysisResult,
+  tradeQuality: { quality: TradeQuality; reasons: string[] },
+): RiskRewardScenario[] {
+  return scenarios.map((scenario) => {
+    const warnings: string[] = [];
+    if (scenario.warning) warnings.push(scenario.warning);
+    if (tradeQuality.quality === 'wait') {
+      warnings.push('Calculated while Trade Quality is WAIT — this is distance geometry only, not a validated edge.');
+    }
+    if (trend.trend === 'neutral') {
+      warnings.push('Trend is neutral — a higher ratio on one side does not confirm that direction.');
+    }
+    if (scenario.quality === 'normal' && Number(scenario.ratio) >= 1.5 && tradeQuality.quality === 'wait') {
+      warnings.push('Do not treat a favorable ratio as trade permission while broader evidence remains unaligned.');
+    }
+
+    return warnings.length > 0
+      ? { ...scenario, warning: warnings.join(' ') }
+      : scenario;
+  });
 }
 
 function calculatePositionSizing(

@@ -116,8 +116,55 @@ describe('computeRiskAnalysis', () => {
 
     expect(result.decision.state).toBe('wait');
     expect(result.decision.trendScore).toBe(85);
-    expect(result.decision.entryQualityScore).toBeLessThan(result.decision.trendScore);
+    expect(result.decision.entryQualityBlocked).toBe(true);
+    expect(result.decision.entryQualityScore).toBeLessThanOrEqual(69);
+    expect(result.decision.rawEntryQualityScore).toBeGreaterThan(result.decision.entryQualityScore);
     expect(result.decision.rejectionReasons).toEqual(expect.arrayContaining(['4H neutral', 'momentum weakening', 'resistance too close']));
+  });
+
+  it('forces WAIT and caps entry quality when trade quality is wait even without decision blockers', () => {
+    const result = computeRiskAnalysis({
+      trend: makeTrend({ trend: 'neutral', score: 5 }),
+      structure: makeStructure({ trend: 'range' }),
+      volatility: makeVolatility({ classification: 'low', bandDisagreement: true }),
+      supportResistance: makeSR(),
+      setups: makeSetups([{
+        setup: 'Bearish Range Bounce',
+        direction: 'bearish',
+        strength: 100,
+        conditionsMet: ['range', 'resistance', 'momentum'],
+        conditionsMissing: [],
+        conditionsMetCount: 3,
+        conditionsTotal: 3,
+        invalidationCondition: 'price breaks above 1.1694',
+      }]),
+      currentPrice: 1.1050,
+    });
+
+    expect(result.tradeQuality).toBe('wait');
+    expect(result.decision.state).toBe('wait');
+    expect(result.decision.entryQualityBlocked).toBe(true);
+    expect(result.decision.entryQualityScore).toBeLessThanOrEqual(69);
+  });
+
+  it('adds neutral and wait warnings to risk reward scenarios', () => {
+    const result = computeRiskAnalysis({
+      trend: makeTrend({ trend: 'neutral', score: 5 }),
+      structure: makeStructure({
+        trend: 'range',
+        lastSwingHigh: { type: 'high', timestamp: '2024-01-01T00:00:00.000Z', price: 1.1080, index: 0 },
+        lastSwingLow: { type: 'low', timestamp: '2024-01-01T00:00:00.000Z', price: 1.0980, index: 0 },
+      }),
+      volatility: makeVolatility({ bandDisagreement: true }),
+      supportResistance: makeSR(),
+      setups: makeSetups([]),
+      currentPrice: 1.1050,
+    });
+
+    expect(result.riskRewardScenarios.length).toBeGreaterThan(0);
+    for (const scenario of result.riskRewardScenarios) {
+      expect(scenario.warning).toMatch(/WAIT|neutral/i);
+    }
   });
 
   it('returns nearby support and resistance with ATR-normalized distances', () => {

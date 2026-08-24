@@ -130,6 +130,7 @@ describe('computeConfidence', () => {
 
     expect(result.overallScore).toBeGreaterThanOrEqual(71);
     expect(result.band).toBe('High');
+    expect(result.bandLabel).toBe('Strong agreement');
     const momentumFactor = result.factors.find((f) => f.name === 'Momentum');
     expect(momentumFactor?.score).toBe(90);
   });
@@ -157,6 +158,7 @@ describe('computeConfidence', () => {
 
     expect(result.overallScore).toBeLessThanOrEqual(40);
     expect(result.band).toBe('Low');
+    expect(result.bandLabel).toBe('Weak agreement');
   });
 
   it('applies structure contradiction penalty', () => {
@@ -358,6 +360,7 @@ describe('computeConfidence', () => {
       currentPrice: 1.16,
     });
     expect(moderate.band).toBe('Moderate');
+    expect(moderate.bandLabel).toBe('Mixed evidence');
 
     const highTrend = makeTrend('bullish', 80, [
       { direction: 'bullish', score: 25 },
