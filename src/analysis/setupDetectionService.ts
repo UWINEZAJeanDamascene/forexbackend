@@ -81,11 +81,18 @@ export async function getSetupDetection(symbol: Symbol, timeframe: Timeframe): P
   };
 
   const setups = detectSetups(ctx);
+  const twoSided =
+    trendResponse.trend.trend === 'neutral' ||
+    mtfResponse.alignment === 'mixed' ||
+    mtfResponse.alignment === 'aligned_neutral' ||
+    mtfResponse.alignment === 'insufficient_data' ||
+    higherIncomplete;
 
   return {
     symbol,
     timeframe,
     setups,
+    presentation: twoSided ? 'two_sided' : 'directional',
     dataQualityNote: higherIncomplete
       ? 'Higher timeframe data incomplete — setups that require multi-timeframe confirmation were excluded.'
       : null,

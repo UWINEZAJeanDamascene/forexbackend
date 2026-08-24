@@ -400,10 +400,14 @@ export function rankAndFilterSetups(setups: DetectedSetup[], ctx: SetupContext):
   }
 
   const ranked = [...filtered].sort((a, b) => setupPriorityScore(b, consensus) - setupPriorityScore(a, consensus));
-  return ranked.slice(0, MAX_SETUPS_RETURNED).map((setup, index) => ({
-    ...setup,
-    rank: index + 1,
-  }));
+  const visible = ranked.slice(0, MAX_SETUPS_RETURNED);
+
+  // In a neutral or mixed market, ordering bullish and bearish hypotheses as
+  // #1/#2 falsely implies a directional preference. Keep the observations but
+  // remove rank metadata entirely.
+  if (consensus === 'neutral') return visible;
+
+  return visible.map((setup, index) => ({ ...setup, rank: index + 1 }));
 }
 
 function filterOppositeBreakouts(setups: DetectedSetup[]): DetectedSetup[] {

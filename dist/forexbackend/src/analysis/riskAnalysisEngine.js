@@ -17,7 +17,17 @@ function computeRiskAnalysis(params) {
     const invalidationCandidates = buildInvalidationCandidates(params, nearbySupport, nearbyResistance, atr);
     const riskRewardScenarios = buildRiskRewardScenarios(params.currentPrice, nearbySupport, nearbyResistance, invalidationCandidates, atr);
     const tradeQuality = assessTradeQuality(params.trend, params.structure, params.setups, riskRewardScenarios, params.volatility, params.momentum, params.multiTimeframe);
-    const decision = assessTradeDecision(params.trend, params.setups, params.momentum, params.multiTimeframe, nearbySupport, nearbyResistance);
+    // The dashboard does not yet persist and calibrate comparable out-of-sample
+    // outcomes for the live setup. Be explicit about that absence rather than
+    // converting rule agreement or an R:R calculation into a directional edge.
+    const evidenceValidation = {
+        status: 'unvalidated',
+        sampleSize: null,
+        outcomeMetricsAvailable: false,
+        message: 'No independently calibrated out-of-sample outcome record is available for this exact setup. Technical observations are not an actionable signal.',
+    };
+    const annotatedRiskRewardScenarios = annotateRiskRewardScenarios(riskRewardScenarios, params.trend, tradeQuality);
+    const decision = assessTradeDecision(params.trend, params.setups, params.momentum, params.multiTimeframe, nearbySupport, nearbyResistance, tradeQuality, evidenceValidation);
     let positionSizing = null;
     let positionSizingInput = null;
     if (params.accountSize !== undefined && params.maxRiskPercent !== undefined) {
@@ -36,9 +46,10 @@ function computeRiskAnalysis(params) {
         atr,
         volatilityContext,
         invalidationCandidates,
-        riskRewardScenarios,
+        riskRewardScenarios: annotatedRiskRewardScenarios,
         tradeQuality: tradeQuality.quality,
         tradeQualityReasons: tradeQuality.reasons,
+        evidenceValidation,
         decision,
         positionSizing,
         positionSizingInput,
@@ -50,11 +61,11 @@ function computeRiskAnalysis(params) {
         analyzedAt: new Date().toISOString(),
     };
 }
-function assessTradeDecision(trend, setups, momentum, multiTimeframe, nearbySupport, nearbyResistance) {
+function assessTradeDecision(trend, setups, momentum, multiTimeframe, nearbySupport, nearbyResistance, tradeQuality, evidenceValidation) {
     const trendScore = Math.max(0, Math.min(100, Math.round(trend.score)));
-    const direction = trend.trend === 'neutral'
-        ? setups[0]?.direction ?? 'bullish'
-        : trend.trend;
+    // Neutral means neutral. Never borrow a direction from the first ranked
+    // candidate, because candidate ordering must not manufacture market bias.
+    const direction = trend.trend;
     const reasons = [];
     const alignment = multiTimeframe?.alignment;
     const isMixedAlignment = alignment === 'mixed' || alignment === 'insufficient_data';
@@ -70,10 +81,10 @@ function assessTradeDecision(trend, setups, momentum, multiTimeframe, nearbySupp
     const directionalMomentum = momentum && momentum.momentum !== 'neutral';
     const momentumWeakening = momentum && (momentum.momentum === 'neutral' ||
         momentum.strength !== 'strong' ||
-        (directionalMomentum && momentum.momentum !== direction));
+        (direction !== 'neutral' && directionalMomentum && momentum.momentum !== direction));
     if (momentumWeakening)
         reasons.push('momentum weakening');
-    const nearbyOpposingLevel = direction === 'bullish' ? nearbyResistance : nearbySupport;
+    const nearbyOpposingLevel = direction === 'bullish' ? nearbyResistance : direction === 'bearish' ? nearbySupport : null;
     if (direction === 'bullish' && nearbyResistance?.proximity === 'nearby')
         reasons.push('resistance too close');
     if (direction === 'bearish' && nearbySupport?.proximity === 'nearby')
@@ -91,7 +102,7 @@ function assessTradeDecision(trend, setups, momentum, multiTimeframe, nearbySupp
                 : alignment === 'mixed'
                     ? 25
                     : 0;
-    const momentumScore = !momentum ? 50 : momentum.momentum === direction
+    const momentumScore = !momentum || direction === 'neutral' ? 0 : momentum.momentum === direction
         ? momentum.strength === 'strong' ? 100 : momentum.strength === 'moderate' ? 75 : 55
         : momentum.momentum === 'neutral' ? 40 : 15;
     const locationScore = nearbyOpposingLevel?.proximity === 'nearby'
@@ -99,16 +110,25 @@ function assessTradeDecision(trend, setups, momentum, multiTimeframe, nearbySupp
         : nearbyOpposingLevel?.proximity === 'within_range'
             ? 55
             : 85;
-    const entryQualityScore = Math.round(setupScore * 0.35 + alignmentScore * 0.25 + momentumScore * 0.20 + locationScore * 0.20);
-    const state = reasons.length > 0
+    const rawEntryQualityScore = Math.round(setupScore * 0.35 + alignmentScore * 0.25 + momentumScore * 0.20 + locationScore * 0.20);
+    if (evidenceValidation.status !== 'validated')
+        reasons.push(evidenceValidation.message);
+    const blocked = reasons.length > 0 || tradeQuality.quality === 'wait' || evidenceValidation.status !== 'validated';
+    const state = blocked
         ? 'wait'
-        : entryQualityScore >= 70
-            ? 'ready'
-            : 'review';
+        : 'review';
+    const entryQualityScore = blocked
+        ? Math.min(rawEntryQualityScore, 69)
+        : rawEntryQualityScore;
     return {
         state,
         trendScore,
+        rawEntryQualityScore: Math.max(0, Math.min(100, rawEntryQualityScore)),
         entryQualityScore: Math.max(0, Math.min(100, entryQualityScore)),
+        entryQualityBlocked: blocked,
+        entryQualityNote: blocked
+            ? 'Checklist coverage is informational only. It remains blocked until independent out-of-sample evidence validates this exact setup.'
+            : null,
         rejectionReasons: reasons,
     };
 }
@@ -370,6 +390,25 @@ function buildRiskRewardScenarios(currentPrice, nearbySupport, nearbyResistance,
         });
     }
     return scenarios;
+}
+function annotateRiskRewardScenarios(scenarios, trend, tradeQuality) {
+    return scenarios.map((scenario) => {
+        const warnings = [];
+        if (scenario.warning)
+            warnings.push(scenario.warning);
+        if (tradeQuality.quality === 'wait') {
+            warnings.push('Calculated while Trade Quality is WAIT — this is distance geometry only, not a validated edge.');
+        }
+        if (trend.trend === 'neutral') {
+            warnings.push('Trend is neutral — a higher ratio on one side does not confirm that direction.');
+        }
+        if (scenario.quality === 'normal' && Number(scenario.ratio) >= 1.5 && tradeQuality.quality === 'wait') {
+            warnings.push('Do not treat a favorable ratio as trade permission while broader evidence remains unaligned.');
+        }
+        return warnings.length > 0
+            ? { ...scenario, warning: warnings.join(' ') }
+            : scenario;
+    });
 }
 function calculatePositionSizing(accountSize, maxRiskPercent, invalidationCandidates, currentPrice, symbol, atr, quoteToAccountRate = 1, accountCurrency = 'USD') {
     if (accountSize <= 0 || maxRiskPercent <= 0)

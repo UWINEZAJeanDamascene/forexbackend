@@ -118,7 +118,9 @@ describe('computeRiskAnalysis', () => {
     expect(result.decision.trendScore).toBe(85);
     expect(result.decision.entryQualityBlocked).toBe(true);
     expect(result.decision.entryQualityScore).toBeLessThanOrEqual(69);
-    expect(result.decision.rawEntryQualityScore).toBeGreaterThan(result.decision.entryQualityScore);
+    expect(result.decision.rawEntryQualityScore).toBeGreaterThanOrEqual(result.decision.entryQualityScore);
+    expect(result.evidenceValidation.status).toBe('unvalidated');
+    expect(result.decision.rejectionReasons).toContain(result.evidenceValidation.message);
     expect(result.decision.rejectionReasons).toEqual(expect.arrayContaining(['4H neutral', 'momentum weakening', 'resistance too close']));
   });
 
@@ -144,6 +146,45 @@ describe('computeRiskAnalysis', () => {
     expect(result.tradeQuality).toBe('wait');
     expect(result.decision.state).toBe('wait');
     expect(result.decision.entryQualityBlocked).toBe(true);
+    expect(result.decision.entryQualityScore).toBeLessThanOrEqual(69);
+  });
+
+  it('does not manufacture direction from the first setup when the trend is neutral', () => {
+    const result = computeRiskAnalysis({
+      trend: makeTrend({ trend: 'neutral', score: 0 }),
+      structure: makeStructure({ trend: 'range' }),
+      volatility: makeVolatility(),
+      supportResistance: makeSR(),
+      setups: makeSetups([{
+        setup: 'Bullish Range Bounce',
+        direction: 'bullish',
+        strength: 100,
+        conditionsMet: ['range', 'support', 'momentum'],
+        conditionsMissing: [],
+        conditionsMetCount: 3,
+        conditionsTotal: 3,
+        invalidationCondition: 'price breaks below 1.0995',
+      }]),
+      momentum: {
+        momentum: 'bearish',
+        strength: 'strong',
+        score: -70,
+        rawScore: -70,
+        counterTrend: false,
+        counterTrendExplanation: '',
+        trendContext: 'neutral',
+        divergence: null,
+        momentumLean: null,
+        adjustmentFactor: 1,
+        adjustmentReason: '',
+        components: { rsi: { score: 0, explanation: '', raw: {} }, macd: { score: 0, explanation: '', raw: {} }, priceMovement: { score: 0, explanation: '', raw: {} } },
+        dataQuality: { sufficient: true, candleCount: 100, minimumRequired: 60 },
+      },
+      currentPrice: 1.1050,
+    });
+
+    expect(result.decision.state).toBe('wait');
+    expect(result.decision.rejectionReasons).not.toContain('resistance too close');
     expect(result.decision.entryQualityScore).toBeLessThanOrEqual(69);
   });
 

@@ -24,6 +24,8 @@ export interface ConfidenceAnalysisResult {
     timeframe: string;
     overallScore: number;
     band: ConfidenceBand;
+    /** Human-readable evidence-agreement label; not a win probability. */
+    bandLabel: string;
     factors: ConfidenceFactor[];
     warnings: ConfidenceWarning[];
     explanation: string;

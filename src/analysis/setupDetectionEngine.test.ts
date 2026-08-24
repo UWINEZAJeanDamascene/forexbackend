@@ -308,6 +308,22 @@ describe('detectSetups', () => {
     expect(opposite.length).toBe(0);
   });
 
+  it('does not rank two-sided observations when there is no directional consensus', () => {
+    const ctx = makeContext({
+      trend: { ...makeContext().trend, trend: 'neutral' },
+      multiTimeframe: {
+        ...makeContext().multiTimeframe,
+        alignment: 'aligned_neutral',
+        higherTimeframe: { timeframe: '4H', trend: 'neutral', status: 'ok' },
+        analysis: { timeframe: '1H', trend: 'neutral', score: 0, status: 'ok' },
+      },
+    });
+    const setups = detectSetups(ctx);
+
+    expect(setups.length).toBeGreaterThan(0);
+    expect(setups.every((setup) => setup.rank === undefined)).toBe(true);
+  });
+
   it('includes conditionsMetCount and conditionsTotal on every setup', () => {
     const ctx = makeContext();
     const setups = detectSetups(ctx);

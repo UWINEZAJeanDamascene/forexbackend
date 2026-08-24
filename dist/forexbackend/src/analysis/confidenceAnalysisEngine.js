@@ -83,13 +83,14 @@ function computeConfidence(params) {
         });
     }
     overallScore = Math.max(0, Math.min(100, overallScore));
-    const band = deriveBand(overallScore);
-    const explanation = buildExplanation(overallScore, band, factors, warnings, unroundedTotal);
+    const { band, bandLabel } = deriveBand(overallScore);
+    const explanation = buildExplanation(overallScore, bandLabel, factors, warnings, unroundedTotal);
     return {
         symbol: params.trend.symbol,
         timeframe: params.trend.timeframe,
         overallScore,
         band,
+        bandLabel,
         factors,
         warnings,
         explanation,
@@ -303,14 +304,16 @@ function checkOpposingSetups(setups) {
     return hasSignificantBullish && hasSignificantBearish;
 }
 function deriveBand(score) {
-    if (score <= BAND_THRESHOLDS.low)
-        return 'Low';
-    if (score <= BAND_THRESHOLDS.moderate)
-        return 'Moderate';
-    return 'High';
+    if (score <= BAND_THRESHOLDS.low) {
+        return { band: 'Low', bandLabel: 'Weak agreement' };
+    }
+    if (score <= BAND_THRESHOLDS.moderate) {
+        return { band: 'Moderate', bandLabel: 'Mixed evidence' };
+    }
+    return { band: 'High', bandLabel: 'Strong agreement' };
 }
-function buildExplanation(score, band, factors, warnings, unroundedTotal) {
-    const parts = [`Analysis Confidence: ${score}/100 — ${band}.`];
+function buildExplanation(score, bandLabel, factors, warnings, unroundedTotal) {
+    const parts = [`Evidence Agreement Index: ${score}/100 — ${bandLabel}.`];
     const breakdown = factors
         .map((f) => `${f.name}: ${f.score} × ${(f.weight * 100).toFixed(0)}% = ${f.contribution.toFixed(2)}`)
         .join('; ');

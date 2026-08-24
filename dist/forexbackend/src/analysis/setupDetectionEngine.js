@@ -315,6 +315,8 @@ function detectSetups(ctx) {
             conditionsTotal: rule.conditions.length,
             invalidationCondition: invalidation,
             mtfIncomplete: false,
+            conditionsComplete: conditionsMet.length >= rule.conditions.length,
+            status: conditionsMet.length >= rule.conditions.length ? 'conditions_met' : 'candidate',
         });
     }
     return rankAndFilterSetups(results, ctx);

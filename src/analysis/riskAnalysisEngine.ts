@@ -17,6 +17,7 @@ import {
   ProximityLabel,
   TradeDecisionSummary,
   TradeQuality,
+  EvidenceValidation,
 } from '../../shared/types/riskAnalysis';
 import { calculatePositionSize as calculateSharedPositionSize } from '../../../shared/utils/positionSizing';
 
@@ -71,6 +72,15 @@ export function computeRiskAnalysis(params: {
     params.momentum,
     params.multiTimeframe,
   );
+  // The dashboard does not yet persist and calibrate comparable out-of-sample
+  // outcomes for the live setup. Be explicit about that absence rather than
+  // converting rule agreement or an R:R calculation into a directional edge.
+  const evidenceValidation: EvidenceValidation = {
+    status: 'unvalidated',
+    sampleSize: null,
+    outcomeMetricsAvailable: false,
+    message: 'No independently calibrated out-of-sample outcome record is available for this exact setup. Technical observations are not an actionable signal.',
+  };
   const annotatedRiskRewardScenarios = annotateRiskRewardScenarios(
     riskRewardScenarios,
     params.trend,
@@ -84,6 +94,7 @@ export function computeRiskAnalysis(params: {
     nearbySupport,
     nearbyResistance,
     tradeQuality,
+    evidenceValidation,
   );
 
   let positionSizing: PositionSizingResult | null = null;
@@ -118,6 +129,7 @@ export function computeRiskAnalysis(params: {
     riskRewardScenarios: annotatedRiskRewardScenarios,
     tradeQuality: tradeQuality.quality,
     tradeQualityReasons: tradeQuality.reasons,
+    evidenceValidation,
     decision,
     positionSizing,
     positionSizingInput,
@@ -138,11 +150,12 @@ function assessTradeDecision(
   nearbySupport: NearbyLevel | null,
   nearbyResistance: NearbyLevel | null,
   tradeQuality: { quality: TradeQuality; reasons: string[] },
+  evidenceValidation: EvidenceValidation,
 ): TradeDecisionSummary {
   const trendScore = Math.max(0, Math.min(100, Math.round(trend.score)));
-  const direction = trend.trend === 'neutral'
-    ? setups[0]?.direction ?? 'bullish'
-    : trend.trend;
+  // Neutral means neutral. Never borrow a direction from the first ranked
+  // candidate, because candidate ordering must not manufacture market bias.
+  const direction = trend.trend;
   const reasons: string[] = [];
 
   const alignment = multiTimeframe?.alignment;
@@ -162,11 +175,11 @@ function assessTradeDecision(
   const momentumWeakening = momentum && (
     momentum.momentum === 'neutral' ||
     momentum.strength !== 'strong' ||
-    (directionalMomentum && momentum.momentum !== direction)
+    (direction !== 'neutral' && directionalMomentum && momentum.momentum !== direction)
   );
   if (momentumWeakening) reasons.push('momentum weakening');
 
-  const nearbyOpposingLevel = direction === 'bullish' ? nearbyResistance : nearbySupport;
+  const nearbyOpposingLevel = direction === 'bullish' ? nearbyResistance : direction === 'bearish' ? nearbySupport : null;
   if (direction === 'bullish' && nearbyResistance?.proximity === 'nearby') reasons.push('resistance too close');
   if (direction === 'bearish' && nearbySupport?.proximity === 'nearby') reasons.push('support too close');
   if (isMixedAlignment && !reasons.some((reason) => reason.includes('neutral'))) {
@@ -183,7 +196,7 @@ function assessTradeDecision(
         : alignment === 'mixed'
           ? 25
           : 0;
-  const momentumScore = !momentum ? 50 : momentum.momentum === direction
+  const momentumScore = !momentum || direction === 'neutral' ? 0 : momentum.momentum === direction
     ? momentum.strength === 'strong' ? 100 : momentum.strength === 'moderate' ? 75 : 55
     : momentum.momentum === 'neutral' ? 40 : 15;
   const locationScore = nearbyOpposingLevel?.proximity === 'nearby'
@@ -195,12 +208,11 @@ function assessTradeDecision(
     setupScore * 0.35 + alignmentScore * 0.25 + momentumScore * 0.20 + locationScore * 0.20,
   );
 
-  const blocked = reasons.length > 0 || tradeQuality.quality === 'wait';
+  if (evidenceValidation.status !== 'validated') reasons.push(evidenceValidation.message);
+  const blocked = reasons.length > 0 || tradeQuality.quality === 'wait' || evidenceValidation.status !== 'validated';
   const state: TradeDecisionSummary['state'] = blocked
     ? 'wait'
-    : rawEntryQualityScore >= 70
-      ? 'ready'
-      : 'review';
+    : 'review';
 
   const entryQualityScore = blocked
     ? Math.min(rawEntryQualityScore, 69)
@@ -213,7 +225,7 @@ function assessTradeDecision(
     entryQualityScore: Math.max(0, Math.min(100, entryQualityScore)),
     entryQualityBlocked: blocked,
     entryQualityNote: blocked
-      ? 'Capped while Trade Quality is WAIT. Raw setup score is informational only and not actionable.'
+      ? 'Checklist coverage is informational only. It remains blocked until independent out-of-sample evidence validates this exact setup.'
       : null,
     rejectionReasons: reasons,
   };
