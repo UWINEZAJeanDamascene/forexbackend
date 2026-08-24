@@ -1,12 +1,4 @@
 export type ProximityLabel = 'nearby' | 'within_range' | 'distant';
-export type TradeQuality = 'wait' | 'low' | 'moderate' | 'high';
-export type TradeDecisionState = 'wait' | 'review' | 'ready';
-export interface TradeDecisionSummary {
-    state: TradeDecisionState;
-    trendScore: number;
-    entryQualityScore: number;
-    rejectionReasons: string[];
-}
 export interface NearbyLevel {
     price: number;
     zoneRange: [number, number];
@@ -36,8 +28,6 @@ export interface RiskRewardScenario {
         distanceInATR: number;
     };
     ratio: string;
-    quality?: 'normal' | 'extreme' | 'unavailable';
-    warning?: string;
 }
 export interface PositionSizingInput {
     accountSize: number;
@@ -50,9 +40,6 @@ export interface PositionSizingResult {
     positionSizeLots: number;
     basedOnInvalidation: number;
     unusuallyHighRisk: boolean;
-    accountCurrency?: string;
-    quoteToAccountRate?: number;
-    conversionPair?: string | null;
 }
 export interface VolatilityContext {
     atr: number;
@@ -71,9 +58,6 @@ export interface RiskAnalysisResult {
     volatilityContext: VolatilityContext;
     invalidationCandidates: InvalidationCandidate[];
     riskRewardScenarios: RiskRewardScenario[];
-    tradeQuality: TradeQuality;
-    tradeQualityReasons: string[];
-    decision: TradeDecisionSummary;
     positionSizing: PositionSizingResult | null;
     positionSizingInput: PositionSizingInput | null;
     thresholds: {

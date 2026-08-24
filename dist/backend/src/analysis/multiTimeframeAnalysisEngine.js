@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BANNED_WORDS = exports.TIMEFRAME_HIERARCHY = void 0;
+exports.BANNED_WORDS = exports.CANONICAL_TIMEFRAME_STACK = exports.TIMEFRAME_HIERARCHY = void 0;
 exports.clearMultiTimeframeCache = clearMultiTimeframeCache;
 exports.classifyAlignment = classifyAlignment;
 exports.detectPattern = detectPattern;
@@ -20,6 +20,7 @@ exports.TIMEFRAME_HIERARCHY = {
 };
 const MIN_CANDLES = 60;
 const CACHE_TTL_MS = 90_000;
+exports.CANONICAL_TIMEFRAME_STACK = ['1D', '4H', '1H', '15m', '5m'];
 const cache = new Map();
 function clearMultiTimeframeCache() {
     cache.clear();
@@ -52,6 +53,7 @@ async function fetchTimeframeTrend(symbol, timeframe) {
             score: trendResponse.trend.score,
             strength: trendResponse.trend.strength,
             status: 'ok',
+            analyzedAt: trendResponse.trend.analyzedAt,
         };
         setCache(symbol, timeframe, snapshot);
         return snapshot;
@@ -83,7 +85,7 @@ function getCachedAllowStale(symbol, timeframe) {
     const entry = cache.get(key);
     return entry?.data ?? null;
 }
-function classifyAlignment(higher, analysis, lower) {
+function classifyAlignment(higher, analysis, lower = null) {
     if (analysis.status !== 'ok') {
         return 'insufficient_data';
     }
@@ -93,11 +95,20 @@ function classifyAlignment(higher, analysis, lower) {
     }
     const allBullish = snapshots.every((s) => s.trend === 'bullish');
     const allBearish = snapshots.every((s) => s.trend === 'bearish');
-    const allSameDirection = allBullish || allBearish;
+    const allNeutral = snapshots.every((s) => s.trend === 'neutral');
+    // A lower-timeframe counter-move is classified as a pullback when the
+    // higher and analysis timeframes agree. It is not the same as a directional
+    // conflict at the decision timeframe.
+    if (higher?.trend === 'bullish' && analysis.trend === 'bullish' && lower?.trend === 'bearish')
+        return 'aligned_bullish';
+    if (higher?.trend === 'bearish' && analysis.trend === 'bearish' && lower?.trend === 'bullish')
+        return 'aligned_bearish';
     if (allBullish)
         return 'aligned_bullish';
     if (allBearish)
         return 'aligned_bearish';
+    if (allNeutral)
+        return 'aligned_neutral';
     if (snapshots.length >= 2 && snapshots[0].trend === snapshots[1].trend && snapshots[1].trend !== 'neutral') {
         return snapshots[1].trend === 'bullish' ? 'partially_aligned_bullish' : 'partially_aligned_bearish';
     }
@@ -141,7 +152,7 @@ function generateExplanation(alignment, higher, analysis, lower, pattern) {
     parts.push('This is a description of current conditions across timeframes, not a trading signal.');
     return parts.join(' ');
 }
-async function analyzeMultiTimeframe(symbol, analysisTimeframe) {
+async function analyzeMultiTimeframe(symbol, analysisTimeframe, includeStack = false) {
     if (!instruments_1.ENABLED_TIMEFRAMES.includes(analysisTimeframe)) {
         throw new Error(`Timeframe ${analysisTimeframe} is not enabled.`);
     }
@@ -155,9 +166,27 @@ async function analyzeMultiTimeframe(symbol, analysisTimeframe) {
     const fetchAnalysis = cachedAnalysis ? Promise.resolve(cachedAnalysis) : fetchTimeframeTrend(symbol, analysisTimeframe);
     const fetchLower = cachedLower ? Promise.resolve(cachedLower) : lowerTimeframe ? fetchTimeframeTrend(symbol, lowerTimeframe) : Promise.resolve(null);
     const [higher, analysis, lower] = await Promise.all([fetchHigher, fetchAnalysis, fetchLower]);
+    let timeframeStack;
+    if (includeStack) {
+        const known = new Map();
+        for (const snapshot of [higher, analysis, lower]) {
+            if (snapshot)
+                known.set(snapshot.timeframe, snapshot);
+        }
+        timeframeStack = await Promise.all(exports.CANONICAL_TIMEFRAME_STACK.map(async (timeframe) => {
+            const existing = known.get(timeframe);
+            if (existing)
+                return existing;
+            const cached = getCached(symbol, timeframe);
+            return cached ?? fetchTimeframeTrend(symbol, timeframe);
+        }));
+    }
     const alignment = classifyAlignment(higher, analysis, lower);
     const pattern = detectPattern(higher, analysis, lower);
     const explanation = generateExplanation(alignment, higher, analysis, lower, pattern);
+    const validSnapshots = (timeframeStack ?? [higher, analysis, lower])
+        .filter((snapshot) => snapshot !== null && snapshot.status === 'ok');
+    const scores = validSnapshots.map((snapshot) => snapshot.score);
     if (exports.BANNED_WORDS.test(explanation)) {
         logger.error('Banned word found in MTF explanation', { explanation });
         throw new Error('Generated explanation contains prohibited trade-instruction language.');
@@ -168,7 +197,10 @@ async function analyzeMultiTimeframe(symbol, analysisTimeframe) {
         higherTimeframe: higher ?? null,
         analysis,
         lowerTimeframe: lower ?? null,
+        timeframeStack,
         alignment,
+        scoreRange: scores.length > 0 ? [Math.min(...scores), Math.max(...scores)] : undefined,
+        snapshotAt: new Date().toISOString(),
         possiblePattern: pattern,
         explanation,
     };

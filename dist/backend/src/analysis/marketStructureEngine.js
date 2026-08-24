@@ -8,7 +8,7 @@ const DEFAULT_SWING_WINDOW = 2;
 const MIN_SWING_BARS = 3;
 const ATR_MULTIPLIER = 1.0;
 const ATR_PERIOD = 14;
-function detectMarketStructure(candles, swingWindow = DEFAULT_SWING_WINDOW) {
+function detectMarketStructure(candles, swingWindow = DEFAULT_SWING_WINDOW, options = {}) {
     if (candles.length < swingWindow * 2 + 1) {
         return {
             symbol: '',
@@ -28,8 +28,8 @@ function detectMarketStructure(candles, swingWindow = DEFAULT_SWING_WINDOW) {
             },
         };
     }
-    const rawHighs = findSwingHighs(candles, swingWindow);
-    const rawLows = findSwingLows(candles, swingWindow);
+    const rawHighs = findSwingHighs(candles, swingWindow, options.confirmedSwingOnly ?? false);
+    const rawLows = findSwingLows(candles, swingWindow, options.confirmedSwingOnly ?? false);
     const atrValues = (0, atr_1.atr)(candles, ATR_PERIOD);
     const currentAtr = lastNonNil(atrValues);
     const filtered = filterSwingsBySize(rawHighs, rawLows, currentAtr, candles.length);
@@ -48,7 +48,8 @@ function detectMarketStructure(candles, swingWindow = DEFAULT_SWING_WINDOW) {
     const classifiedLows = classifySwingLows(swingLows);
     const trend = determineTrend(classifiedHighs, classifiedLows);
     const recentCounts = computeRecentSwingCounts(swingHighs, swingLows, 4);
-    const trendQualifier = determineTrendQualifier(trend, recentCounts);
+    const latestSwingEvent = getLatestSwingEvent(classifiedHighs.events, classifiedLows.events);
+    const trendQualifier = determineTrendQualifier(trend, recentCounts, latestSwingEvent?.type);
     const bosChochEvents = detectBosAndChoch(candles, swingHighs, swingLows, trend);
     const allEvents = [...classifiedHighs.events, ...classifiedLows.events, ...bosChochEvents];
     allEvents.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -80,10 +81,12 @@ function detectStructureEvents(candles, swingWindow = DEFAULT_SWING_WINDOW) {
     const result = detectMarketStructure(candles, swingWindow);
     return result.structure.events;
 }
-function findSwingHighs(candles, window) {
+function findSwingHighs(candles, window, confirmedSwingOnly) {
     const swings = [];
     const len = candles.length;
     for (let i = window; i < len; i++) {
+        if (confirmedSwingOnly && i + window >= len)
+            continue;
         const currentHigh = candles[i].high;
         let isSwingHigh = true;
         for (let j = i - window; j <= i + window; j++) {
@@ -102,15 +105,18 @@ function findSwingHighs(candles, window) {
                 timestamp: candles[i].timestamp,
                 price: currentHigh,
                 index: i,
+                confirmationTimestamp: candles[i + window]?.timestamp,
             });
         }
     }
     return swings;
 }
-function findSwingLows(candles, window) {
+function findSwingLows(candles, window, confirmedSwingOnly) {
     const swings = [];
     const len = candles.length;
     for (let i = window; i < len; i++) {
+        if (confirmedSwingOnly && i + window >= len)
+            continue;
         const currentLow = candles[i].low;
         let isSwingLow = true;
         for (let j = i - window; j <= i + window; j++) {
@@ -129,6 +135,7 @@ function findSwingLows(candles, window) {
                 timestamp: candles[i].timestamp,
                 price: currentLow,
                 index: i,
+                confirmationTimestamp: candles[i + window]?.timestamp,
             });
         }
     }
@@ -238,16 +245,21 @@ function computeRecentSwingCounts(swingHighs, swingLows, recentWindow) {
     }
     return { recentHigherHighs, recentHigherLows, recentLowerHighs, recentLowerLows };
 }
-function determineTrendQualifier(trend, recent) {
+function determineTrendQualifier(trend, recent, latestEventType) {
     const recentBullish = recent.recentHigherHighs + recent.recentHigherLows;
     const recentBearish = recent.recentLowerHighs + recent.recentLowerLows;
     const recentTotal = recentBullish + recentBearish;
     if (recentTotal === 0)
         return null;
-    if (trend === 'bullish' && recentBearish > recentBullish) {
+    const latestContradicts = trend === 'bullish'
+        ? latestEventType === 'lower_high' || latestEventType === 'lower_low'
+        : trend === 'bearish'
+            ? latestEventType === 'higher_high' || latestEventType === 'higher_low'
+            : false;
+    if (latestContradicts || (trend === 'bullish' && recentBearish > recentBullish)) {
         return 'weakening';
     }
-    if (trend === 'bearish' && recentBullish > recentBearish) {
+    if (trend === 'bearish' && (latestContradicts || recentBullish > recentBearish)) {
         return 'weakening';
     }
     if (trend === 'range' && recentBullish > recentBearish * 2 && recentBullish >= 2) {
@@ -257,6 +269,11 @@ function determineTrendQualifier(trend, recent) {
         return 'leaning bearish';
     }
     return null;
+}
+function getLatestSwingEvent(highEvents, lowEvents) {
+    return [...highEvents, ...lowEvents]
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+        .at(-1) ?? null;
 }
 function detectBosAndChoch(candles, swingHighs, swingLows, trend) {
     const events = [];

@@ -1,17 +1,17 @@
 "use strict";
+/**
+ * Format a price for display according to instrument conventions.
+ *
+ * - Standard FX pairs (EUR/USD, GBP/USD, USD/CHF, AUD/USD, USD/CAD, NZD/USD): 5 decimal places
+ * - JPY pairs (USD/JPY, EUR/JPY, GBP/JPY, etc.): 3 decimal places
+ * - XAU/USD (gold): 2 decimal places
+ * - Unknown symbols: 4 decimal places as a safe default
+ */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.formatPrice = formatPrice;
 exports.getPrecision = getPrecision;
 exports.lastValue = lastValue;
 exports.fmt = fmt;
-/**
- * Format a price for display according to instrument conventions.
- *
- * - Standard FX pairs: 5 decimal places
- * - JPY pairs: 3 decimal places
- * - XAU/USD (gold): 2 decimal places
- * - Unknown symbols: 4 decimal places as a safe default
- */
 const STANDARD_FX_PRECISION = 5;
 const JPY_PRECISION = 3;
 const XAU_PRECISION = 2;
@@ -37,7 +37,8 @@ function formatPrice(price, symbol) {
     if (price === null || price === undefined || Number.isNaN(price)) {
         return '—';
     }
-    return price.toFixed(getPrecision(symbol));
+    const precision = getPrecision(symbol);
+    return price.toFixed(precision);
 }
 function getPrecision(symbol) {
     if (symbol === 'XAU/USD') {
@@ -52,11 +53,10 @@ function getPrecision(symbol) {
     return DEFAULT_PRECISION;
 }
 function lastValue(values) {
-    if (!values) {
+    if (!values)
         return null;
-    }
-    for (let index = values.length - 1; index >= 0; index -= 1) {
-        const value = values[index];
+    for (let i = values.length - 1; i >= 0; i--) {
+        const value = values[i];
         if (value !== null && value !== undefined) {
             return value;
         }
@@ -64,9 +64,8 @@ function lastValue(values) {
     return null;
 }
 function fmt(value, digits = 4) {
-    if (value === null || value === undefined || Number.isNaN(value)) {
+    if (value === null || value === undefined || Number.isNaN(value))
         return '—';
-    }
     return value.toFixed(digits);
 }
 //# sourceMappingURL=formatPrice.js.map

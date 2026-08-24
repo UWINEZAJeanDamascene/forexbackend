@@ -37,6 +37,7 @@ class TwelveDataProvider {
             symbol,
             interval,
             outputsize: String(limit),
+            timezone: 'UTC',
         });
         const response = await this.request(url);
         return (0, normalize_1.normalizeTwelveDataTimeSeries)(response);
@@ -49,6 +50,7 @@ class TwelveDataProvider {
             interval,
             start_date: from.toISOString().slice(0, 19).replace('T', ' '),
             end_date: to.toISOString().slice(0, 19).replace('T', ' '),
+            timezone: 'UTC',
         });
         const response = await this.request(url);
         return (0, normalize_1.normalizeTwelveDataTimeSeries)(response);

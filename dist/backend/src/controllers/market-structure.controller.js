@@ -44,7 +44,7 @@ async function getMarketStructureEndpoint(req, res) {
         limit = parsed;
     }
     try {
-        const { candles } = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe, { limit });
+        const { analysisCandles: candles } = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe, { limit });
         const result = (0, marketStructureService_1.getMarketStructure)(candles, { swingWindow });
         res.status(200).json({
             symbol,
