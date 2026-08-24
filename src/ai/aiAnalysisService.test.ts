@@ -52,14 +52,15 @@ describe('AiAnalysisService', () => {
     expect(fallback.generate).toHaveBeenCalledTimes(1);
   });
 
-  it('does not return unsafe text after the safety retry', async () => {
+  it('returns a richer deterministic fallback when providers fail', async () => {
     const provider: AiProvider = { name: 'test', generate: vi.fn().mockResolvedValue(validJson({ summary: 'Guaranteed profit.' })) };
     const service = new AiAnalysisService([provider]);
 
     const result = await service.explain(context());
 
     expect(result.available).toBe(false);
-    expect(result.explanation).toContain('unavailable');
+    expect(result.structured?.summary).toMatch(/WAIT|Trade Quality/i);
+    expect(result.structured?.confirmationNeeded[0]).toMatch(/WAIT/i);
     expect(provider.generate).toHaveBeenCalledTimes(2);
   });
 

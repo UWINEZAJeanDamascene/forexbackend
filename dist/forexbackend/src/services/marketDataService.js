@@ -53,7 +53,7 @@ function rejectFutureLastCandle(candles, timeframe, context) {
     throw new validation_1.DataValidationError(`Market data for ${context.symbol} has a future-dated candle.`, [issue]);
 }
 function getClosedAnalysisCandles(candles, timeframe) {
-    if (candles.length < 3)
+    if (candles.length === 0)
         return candles;
     const lastTimestamp = new Date(candles[candles.length - 1].timestamp).getTime();
     const lastIsClosed = Number.isFinite(lastTimestamp) && Date.now() - lastTimestamp >= (0, instruments_1.timeframeToMs)(timeframe);
