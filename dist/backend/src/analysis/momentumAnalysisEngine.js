@@ -7,7 +7,6 @@ const RSI_SLOPE_WEIGHT = 0.4;
 const MACD_WEIGHT = 0.35;
 const PRICE_MOVEMENT_WEIGHT = 0.3;
 const RSI_WEIGHT = 0.35;
-const TREND_REINFORCE_MULTIPLIER = 1.3;
 const TREND_DAMPEN_MULTIPLIER = 0.5;
 const OVERBOUGHT_THRESHOLD = 70;
 const OVERSOLD_THRESHOLD = 30;
@@ -60,9 +59,10 @@ function analyzeMomentum(candles, indicators, structure) {
         adjustmentReason = 'counter-trend dampening';
     }
     else if (rawDirection === trendContext && trendContext !== 'neutral') {
-        adjustedScore = rawScore * TREND_REINFORCE_MULTIPLIER;
-        adjustmentFactor = TREND_REINFORCE_MULTIPLIER;
-        adjustmentReason = 'trend reinforcement';
+        // Do not amplify a weak momentum reading merely because it agrees with
+        // structure. Agreement is already visible in the component scores; an
+        // extra multiplier manufactured bullish labels on marginal evidence.
+        adjustmentReason = 'raw score retained; no directional reinforcement';
     }
     const clampedScore = Math.round(Math.max(Math.min(adjustedScore, 100), -100));
     const momentum = classifyMomentum(clampedScore);
@@ -163,9 +163,11 @@ function scoreMacd(macd, atr, candles) {
     }
     const componentScore = histogramScore * 0.6 + slopeScore * 0.4 + crossBonus;
     const scaledScore = Math.round(Math.max(Math.min(componentScore, 1), -1) * 100);
+    const roundedHistogram = Number(currentHistogram.toFixed(4));
+    const histogramText = Object.is(roundedHistogram, -0) ? '0.0000' : roundedHistogram.toFixed(4);
     return {
         score: scaledScore,
-        explanation: `MACD histogram is ${currentHistogram.toFixed(4)} and ${currentHistogram > priorHistogram ? 'expanding' : priorHistogram !== null ? 'contracting' : 'flat'}. ${crossBonus !== 0 ? (crossBonus > 0 ? 'Fresh bullish cross detected.' : 'Fresh bearish cross detected.') : 'No recent crossover.'}`,
+        explanation: `MACD histogram is ${histogramText} and ${priorHistogram !== null && currentHistogram > priorHistogram ? 'expanding' : priorHistogram !== null ? 'contracting' : 'flat'}. ${crossBonus !== 0 ? (crossBonus > 0 ? 'Fresh bullish cross detected.' : 'Fresh bearish cross detected.') : 'No recent crossover.'}`,
         raw: {
             currentHistogram,
             priorHistogram,
@@ -231,9 +233,9 @@ function classifyMomentumWithLean(score) {
     if (score <= -30)
         return { direction: 'bearish', lean: null };
     if (score >= 10)
-        return { direction: 'neutral', lean: 'leaning bullish' };
+        return { direction: 'neutral', lean: 'mild bullish lean' };
     if (score <= -10)
-        return { direction: 'neutral', lean: 'leaning bearish' };
+        return { direction: 'neutral', lean: 'mild bearish lean' };
     return { direction: 'neutral', lean: null };
 }
 function deriveStrength(score, direction) {

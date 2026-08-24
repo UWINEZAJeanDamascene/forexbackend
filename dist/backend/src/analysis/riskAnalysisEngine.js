@@ -1,18 +1,23 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computeRiskAnalysis = computeRiskAnalysis;
-const instrumentConfig_1 = require("../../../shared/constants/instrumentConfig");
+const positionSizing_1 = require("../../../shared/utils/positionSizing");
 const DEFAULT_NEARBY_ATR = 1.5;
 const DEFAULT_WITHIN_RANGE_ATR = 3.0;
 const DEFAULT_MAX_RISK_PERCENT = 10;
 const DEFAULT_MIN_RISK_PERCENT = 0.1;
+const EXTREME_REWARD_RISK_RATIO = 10;
+const EXTREME_TARGET_DISTANCE_ATR = 20;
+const MIN_SCENARIO_INVALIDATION_DISTANCE_ATR = 0.5;
 function computeRiskAnalysis(params) {
     const atr = params.volatility.currentAtr;
     const volatilityContext = buildVolatilityContext(params.volatility);
     const nearbySupport = findNearbySupport(params.supportResistance, params.currentPrice, atr);
     const nearbyResistance = findNearbyResistance(params.supportResistance, params.currentPrice, atr);
     const invalidationCandidates = buildInvalidationCandidates(params, nearbySupport, nearbyResistance, atr);
-    const riskRewardScenarios = buildRiskRewardScenarios(params.currentPrice, nearbySupport, nearbyResistance, invalidationCandidates);
+    const riskRewardScenarios = buildRiskRewardScenarios(params.currentPrice, nearbySupport, nearbyResistance, invalidationCandidates, atr);
+    const tradeQuality = assessTradeQuality(params.trend, params.structure, params.setups, riskRewardScenarios, params.volatility, params.momentum, params.multiTimeframe);
+    const decision = assessTradeDecision(params.trend, params.setups, params.momentum, params.multiTimeframe, nearbySupport, nearbyResistance);
     let positionSizing = null;
     let positionSizingInput = null;
     if (params.accountSize !== undefined && params.maxRiskPercent !== undefined) {
@@ -20,7 +25,7 @@ function computeRiskAnalysis(params) {
             accountSize: params.accountSize,
             maxRiskPercent: params.maxRiskPercent,
         };
-        positionSizing = calculatePositionSizing(params.accountSize, params.maxRiskPercent, invalidationCandidates, params.currentPrice, params.trend.symbol, atr);
+        positionSizing = calculatePositionSizing(params.accountSize, params.maxRiskPercent, invalidationCandidates, params.currentPrice, params.trend.symbol, atr, params.quoteToAccountRate, params.accountCurrency ?? 'USD');
     }
     return {
         symbol: params.trend.symbol ?? 'unknown',
@@ -32,6 +37,9 @@ function computeRiskAnalysis(params) {
         volatilityContext,
         invalidationCandidates,
         riskRewardScenarios,
+        tradeQuality: tradeQuality.quality,
+        tradeQualityReasons: tradeQuality.reasons,
+        decision,
         positionSizing,
         positionSizingInput,
         thresholds: {
@@ -41,6 +49,103 @@ function computeRiskAnalysis(params) {
         disclaimer: 'This reflects calculated distances between price and technical levels. It is not a probability of profit, a guaranteed outcome, or trading advice.',
         analyzedAt: new Date().toISOString(),
     };
+}
+function assessTradeDecision(trend, setups, momentum, multiTimeframe, nearbySupport, nearbyResistance) {
+    const trendScore = Math.max(0, Math.min(100, Math.round(trend.score)));
+    const direction = trend.trend === 'neutral'
+        ? setups[0]?.direction ?? 'bullish'
+        : trend.trend;
+    const reasons = [];
+    const alignment = multiTimeframe?.alignment;
+    const isMixedAlignment = alignment === 'mixed' || alignment === 'insufficient_data';
+    const relevantSnapshots = multiTimeframe
+        ? [multiTimeframe.higherTimeframe, multiTimeframe.analysis, multiTimeframe.lowerTimeframe]
+            .filter((snapshot) => snapshot !== null)
+        : [];
+    for (const snapshot of relevantSnapshots) {
+        if (snapshot.status === 'ok' && snapshot.trend === 'neutral') {
+            reasons.push(`${snapshot.timeframe} neutral`);
+        }
+    }
+    const directionalMomentum = momentum && momentum.momentum !== 'neutral';
+    const momentumWeakening = momentum && (momentum.momentum === 'neutral' ||
+        momentum.strength !== 'strong' ||
+        (directionalMomentum && momentum.momentum !== direction));
+    if (momentumWeakening)
+        reasons.push('momentum weakening');
+    const nearbyOpposingLevel = direction === 'bullish' ? nearbyResistance : nearbySupport;
+    if (direction === 'bullish' && nearbyResistance?.proximity === 'nearby')
+        reasons.push('resistance too close');
+    if (direction === 'bearish' && nearbySupport?.proximity === 'nearby')
+        reasons.push('support too close');
+    if (isMixedAlignment && !reasons.some((reason) => reason.includes('neutral'))) {
+        reasons.push('multi-timeframe alignment mixed');
+    }
+    const setupScore = setups.length > 0 ? Math.max(...setups.map((setup) => setup.strength)) : 0;
+    const alignmentScore = alignment === 'aligned_bullish' || alignment === 'aligned_bearish'
+        ? 100
+        : alignment === 'partially_aligned_bullish' || alignment === 'partially_aligned_bearish'
+            ? 70
+            : alignment === 'aligned_neutral'
+                ? 35
+                : alignment === 'mixed'
+                    ? 25
+                    : 0;
+    const momentumScore = !momentum ? 50 : momentum.momentum === direction
+        ? momentum.strength === 'strong' ? 100 : momentum.strength === 'moderate' ? 75 : 55
+        : momentum.momentum === 'neutral' ? 40 : 15;
+    const locationScore = nearbyOpposingLevel?.proximity === 'nearby'
+        ? 15
+        : nearbyOpposingLevel?.proximity === 'within_range'
+            ? 55
+            : 85;
+    const entryQualityScore = Math.round(setupScore * 0.35 + alignmentScore * 0.25 + momentumScore * 0.20 + locationScore * 0.20);
+    const state = reasons.length > 0
+        ? 'wait'
+        : entryQualityScore >= 70
+            ? 'ready'
+            : 'review';
+    return {
+        state,
+        trendScore,
+        entryQualityScore: Math.max(0, Math.min(100, entryQualityScore)),
+        rejectionReasons: reasons,
+    };
+}
+function assessTradeQuality(trend, structure, setups, scenarios, volatility, momentum, multiTimeframe) {
+    const reasons = [];
+    const bestRatio = scenarios.reduce((best, scenario) => Math.max(best, Number(scenario.ratio)), 0);
+    const hasExtremeScenario = scenarios.some((scenario) => scenario.quality === 'extreme');
+    if (trend.trend === 'neutral')
+        reasons.push('Trend is neutral; directional evidence is not aligned.');
+    if (structure.trend === 'range')
+        reasons.push('Market structure is ranging, not a confirmed directional trend.');
+    if (setups.length === 0)
+        reasons.push('No setup passed the minimum evidence conditions.');
+    if (bestRatio < 1)
+        reasons.push('All calculated reward/risk scenarios are below 1.0.');
+    else if (bestRatio < 1.5)
+        reasons.push(`Best technical reward/risk is ${bestRatio.toFixed(2)}, below the 1.50 review threshold.`);
+    if (hasExtremeScenario)
+        reasons.push('At least one reward/risk scenario is mathematically extreme and is not treated as a realistic edge.');
+    if (volatility.bandDisagreement)
+        reasons.push('ATR and Bollinger width disagree on the current volatility regime.');
+    if (momentum?.counterTrend)
+        reasons.push(`Momentum is counter-trend (${momentum.momentum} versus ${structure.trend} market structure).`);
+    if (momentum?.divergence)
+        reasons.push(`${momentum.divergence} momentum divergence is present.`);
+    if (multiTimeframe && (multiTimeframe.alignment === 'mixed' || multiTimeframe.alignment === 'insufficient_data'))
+        reasons.push(`Multi-timeframe alignment is ${multiTimeframe.alignment.replace('_', ' ')}.`);
+    if (multiTimeframe && trend.trend !== 'neutral' && !multiTimeframe.alignment.includes(trend.trend))
+        reasons.push(`Higher/current/lower timeframe evidence does not confirm the ${trend.trend} direction.`);
+    if (reasons.some((reason) => reason.includes('neutral') || reason.includes('No setup') || reason.includes('below 1.0') || reason.includes('extreme') || reason.includes('counter-trend') || reason.includes('divergence') || reason.includes('alignment is mixed') || reason.includes('does not confirm'))) {
+        return { quality: 'wait', reasons };
+    }
+    if (reasons.length > 0)
+        return { quality: 'low', reasons };
+    if (bestRatio < 2)
+        return { quality: 'moderate', reasons: ['Technical conditions are present but not strongly asymmetric.'] };
+    return { quality: 'high', reasons: ['Technical conditions and calculated asymmetry are aligned.'] };
 }
 function buildVolatilityContext(volatility) {
     let note = '';
@@ -66,7 +171,7 @@ function buildVolatilityContext(volatility) {
     };
 }
 function findNearbySupport(sr, currentPrice, atr) {
-    const supports = [...sr.supports, ...sr.tested].filter((s) => s.price < currentPrice);
+    const supports = [...sr.supports, ...sr.tested].filter((s) => s.zoneHigh < currentPrice);
     if (supports.length === 0)
         return null;
     let nearest = supports[0];
@@ -91,7 +196,7 @@ function findNearbySupport(sr, currentPrice, atr) {
     };
 }
 function findNearbyResistance(sr, currentPrice, atr) {
-    const resistances = [...sr.resistances, ...sr.tested].filter((r) => r.price > currentPrice);
+    const resistances = [...sr.resistances, ...sr.tested].filter((r) => r.zoneLow > currentPrice);
     if (resistances.length === 0)
         return null;
     let nearest = resistances[0];
@@ -202,30 +307,27 @@ function buildInvalidationCandidates(params, nearbySupport, nearbyResistance, at
     }
     return candidates;
 }
-function buildRiskRewardScenarios(currentPrice, nearbySupport, nearbyResistance, invalidationCandidates) {
+function buildRiskRewardScenarios(currentPrice, nearbySupport, nearbyResistance, invalidationCandidates, atr) {
     const scenarios = [];
     if (invalidationCandidates.length === 0)
         return scenarios;
-    let bullishInvalidation = invalidationCandidates.find((c) => c.price < currentPrice);
-    let bearishInvalidation = invalidationCandidates.find((c) => c.price > currentPrice);
-    if (!bullishInvalidation) {
-        bullishInvalidation = invalidationCandidates[0];
-        console.warn(`[risk] No bullish invalidation below current price ${currentPrice}. Using closest: ${bullishInvalidation.price}`);
-    }
-    if (!bearishInvalidation) {
-        bearishInvalidation = invalidationCandidates[0];
-        console.warn(`[risk] No bearish invalidation above current price ${currentPrice}. Using closest: ${bearishInvalidation.price}`);
-    }
-    if (bullishInvalidation.price >= currentPrice) {
-        console.warn(`[risk] VALIDATION: bullish invalidation ${bullishInvalidation.price} is NOT below current price ${currentPrice}`);
-    }
-    if (bearishInvalidation.price <= currentPrice) {
-        console.warn(`[risk] VALIDATION: bearish invalidation ${bearishInvalidation.price} is NOT above current price ${currentPrice}`);
-    }
-    if (nearbyResistance && nearbyResistance.price > currentPrice) {
+    // Setup text can describe an invalidation immediately beside the current
+    // price (common for breakout candidates). That is logically valid but not
+    // a usable risk boundary and creates artificial 20x-60x R:R values.
+    const usableInvalidations = invalidationCandidates.filter((candidate) => candidate.distanceInATR >= MIN_SCENARIO_INVALIDATION_DISTANCE_ATR);
+    const bullishInvalidation = usableInvalidations
+        .filter((candidate) => candidate.price < currentPrice)
+        .sort((a, b) => Math.abs(currentPrice - a.price) - Math.abs(currentPrice - b.price))[0];
+    const bearishInvalidation = usableInvalidations
+        .filter((candidate) => candidate.price > currentPrice)
+        .sort((a, b) => Math.abs(currentPrice - a.price) - Math.abs(currentPrice - b.price))[0];
+    if (nearbyResistance && nearbyResistance.price > currentPrice && bullishInvalidation) {
         const targetDistance = nearbyResistance.price - currentPrice;
         const invalidationDistance = Math.abs(currentPrice - bullishInvalidation.price);
-        const ratio = invalidationDistance > 0 ? (targetDistance / invalidationDistance).toFixed(2) : '0.00';
+        const ratioNumber = invalidationDistance > 0 ? targetDistance / invalidationDistance : 0;
+        const ratio = ratioNumber.toFixed(2);
+        const targetDistanceInATR = atr > 0 ? targetDistance / atr : 0;
+        const extreme = ratioNumber > EXTREME_REWARD_RISK_RATIO || targetDistanceInATR > EXTREME_TARGET_DISTANCE_ATR;
         scenarios.push({
             direction: 'bullish',
             entryReference: currentPrice,
@@ -239,12 +341,17 @@ function buildRiskRewardScenarios(currentPrice, nearbySupport, nearbyResistance,
                 distanceInATR: nearbyResistance.distanceInATR,
             },
             ratio,
+            quality: extreme ? 'extreme' : 'normal',
+            warning: extreme ? 'Mathematically extreme: the invalidation is unusually narrow or the target is unusually distant; do not treat this ratio as a realistic edge.' : undefined,
         });
     }
-    if (nearbySupport && nearbySupport.price < currentPrice) {
+    if (nearbySupport && nearbySupport.price < currentPrice && bearishInvalidation) {
         const targetDistance = currentPrice - nearbySupport.price;
         const invalidationDistance = Math.abs(currentPrice - bearishInvalidation.price);
-        const ratio = invalidationDistance > 0 ? (targetDistance / invalidationDistance).toFixed(2) : '0.00';
+        const ratioNumber = invalidationDistance > 0 ? targetDistance / invalidationDistance : 0;
+        const ratio = ratioNumber.toFixed(2);
+        const targetDistanceInATR = atr > 0 ? targetDistance / atr : 0;
+        const extreme = ratioNumber > EXTREME_REWARD_RISK_RATIO || targetDistanceInATR > EXTREME_TARGET_DISTANCE_ATR;
         scenarios.push({
             direction: 'bearish',
             entryReference: currentPrice,
@@ -258,35 +365,49 @@ function buildRiskRewardScenarios(currentPrice, nearbySupport, nearbyResistance,
                 distanceInATR: nearbySupport.distanceInATR,
             },
             ratio,
+            quality: extreme ? 'extreme' : 'normal',
+            warning: extreme ? 'Mathematically extreme: the invalidation is unusually narrow or the target is unusually distant; do not treat this ratio as a realistic edge.' : undefined,
         });
     }
     return scenarios;
 }
-function calculatePositionSizing(accountSize, maxRiskPercent, invalidationCandidates, currentPrice, symbol, atr) {
+function calculatePositionSizing(accountSize, maxRiskPercent, invalidationCandidates, currentPrice, symbol, atr, quoteToAccountRate = 1, accountCurrency = 'USD') {
     if (accountSize <= 0 || maxRiskPercent <= 0)
         return null;
     if (invalidationCandidates.length === 0)
         return null;
+    // A boundary that is closer than this is too sensitive to spread and normal
+    // candle noise to support an educational position-size example. Returning
+    // unavailable is safer than converting a tiny distance into a huge size.
+    const sizingInvalidation = invalidationCandidates
+        .filter((candidate) => candidate.distanceInATR >= MIN_SCENARIO_INVALIDATION_DISTANCE_ATR)
+        .sort((a, b) => a.distanceInATR - b.distanceInATR)[0];
+    if (!sizingInvalidation)
+        return null;
     const clampedRiskPercent = Math.max(DEFAULT_MIN_RISK_PERCENT, Math.min(DEFAULT_MAX_RISK_PERCENT, maxRiskPercent));
     const unusuallyHighRisk = maxRiskPercent > 10;
-    const riskAmount = accountSize * (clampedRiskPercent / 100);
-    const primaryInvalidation = invalidationCandidates[0];
+    const primaryInvalidation = sizingInvalidation;
     const riskDistance = Math.abs(currentPrice - primaryInvalidation.price);
-    const config = (0, instrumentConfig_1.getInstrumentConfig)(symbol);
-    const pipValue = config.pipValue;
-    const lotSize = config.lotSize;
-    if (pipValue <= 0 || riskDistance <= 0)
+    const calculation = (0, positionSizing_1.calculatePositionSize)({
+        accountSize,
+        riskPercent: clampedRiskPercent,
+        currentPrice,
+        invalidationPrice: primaryInvalidation.price,
+        symbol,
+        quoteToAccountRate,
+    });
+    if (!calculation)
         return null;
-    const riskDistanceInPips = riskDistance / pipValue;
-    const positionSizeUnits = riskAmount / riskDistance;
-    const positionSizeLots = lotSize > 0 ? positionSizeUnits / lotSize : 0;
     return {
-        riskAmount: Math.round(riskAmount * 100) / 100,
-        riskDistanceInPips: Math.round(riskDistanceInPips * 100) / 100,
-        positionSizeUnits: Math.round(positionSizeUnits),
-        positionSizeLots: Math.round(positionSizeLots * 10000) / 10000,
+        riskAmount: Math.round(calculation.riskAmount * 100) / 100,
+        riskDistanceInPips: Math.round(calculation.riskDistanceInPips * 100) / 100,
+        positionSizeUnits: Math.round(calculation.positionSizeUnits),
+        positionSizeLots: Math.round(calculation.positionSizeLots * 10000) / 10000,
         basedOnInvalidation: primaryInvalidation.price,
         unusuallyHighRisk,
+        accountCurrency,
+        quoteToAccountRate,
+        conversionPair: quoteToAccountRate === 1 ? null : `USD/${symbol.split('/')[1]}`,
     };
 }
 //# sourceMappingURL=riskAnalysisEngine.js.map

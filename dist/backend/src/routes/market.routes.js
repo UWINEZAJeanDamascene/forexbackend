@@ -4,6 +4,7 @@ const express_1 = require("express");
 const market_controller_1 = require("../controllers/market.controller");
 const router = (0, express_1.Router)();
 router.get('/market/candles', market_controller_1.getCandles);
+router.get('/market/quote', market_controller_1.getQuote);
 router.get('/market/symbols', market_controller_1.getSymbols);
 router.get('/market/timeframes', market_controller_1.getTimeframes);
 exports.default = router;

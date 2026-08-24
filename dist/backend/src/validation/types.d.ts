@@ -1,4 +1,4 @@
-export type ValidationIssueType = 'INVALID_PRICE' | 'NEGATIVE_PRICE' | 'INVALID_OHLC_RELATIONSHIP' | 'DUPLICATE_TIMESTAMP' | 'OUT_OF_ORDER_TIMESTAMP' | 'MISSING_CANDLE_GAP' | 'INSUFFICIENT_CANDLE_COUNT';
+export type ValidationIssueType = 'INVALID_PRICE' | 'NEGATIVE_PRICE' | 'INVALID_OHLC_RELATIONSHIP' | 'DUPLICATE_TIMESTAMP' | 'OUT_OF_ORDER_TIMESTAMP' | 'MISSING_CANDLE_GAP' | 'INSUFFICIENT_CANDLE_COUNT' | 'FUTURE_CANDLE_TIMESTAMP';
 export type ValidationSeverity = 'warning' | 'error';
 export interface ValidationIssue {
     type: ValidationIssueType;

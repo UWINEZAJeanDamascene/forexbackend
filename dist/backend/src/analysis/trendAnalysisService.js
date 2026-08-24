@@ -10,11 +10,13 @@ const logger_1 = require("../utils/logger");
 const logger = (0, logger_1.createLogger)('trendAnalysisService');
 const CACHE_TTL_MS = 90_000;
 const cache = new Map();
-function cacheKey(symbol, timeframe) {
-    return `${symbol}:${timeframe}`;
+function cacheKey(symbol, timeframe, options, candles) {
+    const lastCandle = candles[candles.length - 1];
+    const snapshot = lastCandle ? `${candles.length}:${lastCandle.timestamp}` : 'empty';
+    return `${symbol}:${timeframe}:${options.limit ?? 'default'}:${options.swingWindow ?? 2}:${snapshot}`;
 }
-function getCached(symbol, timeframe) {
-    const key = cacheKey(symbol, timeframe);
+function getCached(symbol, timeframe, options, candles) {
+    const key = cacheKey(symbol, timeframe, options, candles);
     const entry = cache.get(key);
     if (!entry)
         return null;
@@ -24,19 +26,25 @@ function getCached(symbol, timeframe) {
     }
     return entry.data;
 }
-function setCache(symbol, timeframe, data) {
-    const key = cacheKey(symbol, timeframe);
+function setCache(symbol, timeframe, options, candles, data) {
+    const key = cacheKey(symbol, timeframe, options, candles);
     cache.set(key, { timestamp: Date.now(), data });
 }
 function clearTrendAnalysisCache() {
     cache.clear();
 }
 async function getTrendAnalysis(symbol, timeframe, options = {}) {
-    const cached = getCached(symbol, timeframe);
+    // Fetch the validated closed-candle snapshot before consulting the analysis
+    // cache. This makes the cache revision-sensitive: a new candle, a changed
+    // lookback, or a changed swing window cannot reuse an older trend result.
+    const analysisLimit = options.limit ?? marketDataService_1.DEFAULT_ANALYSIS_CANDLE_LIMIT;
+    const effectiveOptions = { ...options, limit: analysisLimit };
+    const validated = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe, { limit: analysisLimit });
+    const candles = validated.analysisCandles ?? validated.candles;
+    const cached = getCached(symbol, timeframe, effectiveOptions, candles);
     if (cached) {
         return cached;
     }
-    const { candles } = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe, { limit: options.limit });
     const indicators = (0, indicatorService_1.computeIndicators)(candles, symbol, timeframe);
     const structureResult = (0, marketStructureService_1.getMarketStructure)(candles, options);
     const trend = (0, trendAnalysisEngine_1.analyzeTrend)(candles, indicators.indicators, structureResult.structure);
@@ -45,7 +53,7 @@ async function getTrendAnalysis(symbol, timeframe, options = {}) {
         timeframe,
         trend,
     };
-    setCache(symbol, timeframe, result);
+    setCache(symbol, timeframe, effectiveOptions, candles, result);
     return result;
 }
 //# sourceMappingURL=trendAnalysisService.js.map

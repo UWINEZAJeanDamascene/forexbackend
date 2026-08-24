@@ -5,12 +5,10 @@
 export declare const INSTRUMENT_CONFIG: Record<string, {
     pipValue: number;
     lotSize: number;
-    minStopDistancePips: number;
     name: string;
 }>;
 export declare function getInstrumentConfig(symbol: string): {
     pipValue: number;
     lotSize: number;
-    minStopDistancePips: number;
     name: string;
 };

@@ -14,6 +14,7 @@ function isEnabledTimeframe(value) {
 async function getMultiTimeframeEndpoint(req, res) {
     const symbol = String(req.query.symbol || '');
     const timeframe = String(req.query.timeframe || '');
+    const includeStack = req.query.stack === 'true';
     if (!isEnabledSymbol(symbol)) {
         res.status(400).json({
             error: `Symbol must be one of: ${instruments_1.ENABLED_SYMBOLS.join(', ')}.`,
@@ -27,7 +28,7 @@ async function getMultiTimeframeEndpoint(req, res) {
         return;
     }
     try {
-        const result = await (0, multiTimeframeAnalysisService_1.getMultiTimeframeAnalysis)(symbol, timeframe);
+        const result = await (0, multiTimeframeAnalysisService_1.getMultiTimeframeAnalysis)(symbol, timeframe, includeStack);
         res.status(200).json(result);
     }
     catch (err) {

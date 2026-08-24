@@ -2,36 +2,38 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.calculatePositionSize = calculatePositionSize;
 const instrumentConfig_1 = require("../constants/instrumentConfig");
-/**
- * Calculates the position size for an instrument whose price movement is
- * denominated in its quote currency. quoteToAccountRate converts one quote
- * currency unit into one account-currency unit.
- */
-function calculatePositionSize(params) {
-    const { accountSize, riskPercent, currentPrice, invalidationPrice, symbol, quoteToAccountRate } = params;
-    if (![accountSize, riskPercent, currentPrice, invalidationPrice, quoteToAccountRate].every(Number.isFinite))
+const MINIMUM_STOP_DISTANCE_PIPS = 2;
+const JPY_MINIMUM_STOP_DISTANCE_PIPS = 1;
+function calculatePositionSize(input) {
+    const { accountSize, riskPercent, currentPrice, invalidationPrice, symbol, quoteToAccountRate = 1, } = input;
+    if (!Number.isFinite(accountSize) || accountSize <= 0)
         return null;
-    if (accountSize <= 0 || riskPercent <= 0 || currentPrice <= 0 || invalidationPrice <= 0 || quoteToAccountRate <= 0)
+    if (!Number.isFinite(riskPercent) || riskPercent <= 0)
         return null;
-    const config = (0, instrumentConfig_1.getInstrumentConfig)(symbol);
+    if (!Number.isFinite(currentPrice) || currentPrice <= 0)
+        return null;
+    if (!Number.isFinite(invalidationPrice) || invalidationPrice <= 0)
+        return null;
+    if (!Number.isFinite(quoteToAccountRate) || quoteToAccountRate <= 0)
+        return null;
     const riskDistance = Math.abs(currentPrice - invalidationPrice);
-    const riskDistanceInPips = riskDistance / config.pipValue;
-    if (riskDistance <= 0 ||
-        config.pipValue <= 0 ||
-        config.lotSize <= 0 ||
-        riskDistanceInPips < config.minStopDistancePips - 1e-9)
+    if (riskDistance <= 0)
+        return null;
+    const instrument = (0, instrumentConfig_1.getInstrumentConfig)(symbol);
+    const minimumPips = symbol.includes('/JPY') ? JPY_MINIMUM_STOP_DISTANCE_PIPS : MINIMUM_STOP_DISTANCE_PIPS;
+    const minimumDistance = instrument.pipValue * minimumPips;
+    const floatingPointTolerance = instrument.pipValue * 1e-9;
+    if (riskDistance + floatingPointTolerance < minimumDistance)
         return null;
     const riskAmount = accountSize * (riskPercent / 100);
-    const lossPerUnitInAccountCurrency = riskDistance * quoteToAccountRate;
-    if (lossPerUnitInAccountCurrency <= 0)
-        return null;
-    const positionSizeUnits = riskAmount / lossPerUnitInAccountCurrency;
+    const positionSizeUnits = riskAmount / (riskDistance * quoteToAccountRate);
+    const positionSizeLots = positionSizeUnits / instrument.lotSize;
     return {
         riskAmount,
         riskDistance,
-        riskDistanceInPips,
+        riskDistanceInPips: riskDistance / instrument.pipValue,
         positionSizeUnits,
-        positionSizeLots: positionSizeUnits / config.lotSize,
+        positionSizeLots,
     };
 }
 //# sourceMappingURL=positionSizing.js.map

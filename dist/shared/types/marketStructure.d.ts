@@ -6,7 +6,6 @@ export interface SwingPoint {
     timestamp: string;
     price: number;
     index: number;
-    confirmationTimestamp?: string;
 }
 export interface StructureEvent {
     type: StructureEventType;

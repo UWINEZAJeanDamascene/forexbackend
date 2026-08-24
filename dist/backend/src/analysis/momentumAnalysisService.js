@@ -10,11 +10,12 @@ const logger_1 = require("../utils/logger");
 const logger = (0, logger_1.createLogger)('momentumAnalysis');
 const CACHE_TTL_MS = 90_000;
 const cache = new Map();
-function cacheKey(symbol, timeframe) {
-    return `${symbol}:${timeframe}`;
+function cacheKey(symbol, timeframe, limit, candles) {
+    const last = candles[candles.length - 1];
+    return `${symbol}:${timeframe}:${limit}:${candles.length}:${last?.timestamp ?? 'empty'}`;
 }
-function getCached(symbol, timeframe) {
-    const key = cacheKey(symbol, timeframe);
+function getCached(symbol, timeframe, limit, candles) {
+    const key = cacheKey(symbol, timeframe, limit, candles);
     const entry = cache.get(key);
     if (!entry)
         return null;
@@ -24,19 +25,20 @@ function getCached(symbol, timeframe) {
     }
     return entry.data;
 }
-function setCache(symbol, timeframe, data) {
-    const key = cacheKey(symbol, timeframe);
+function setCache(symbol, timeframe, limit, candles, data) {
+    const key = cacheKey(symbol, timeframe, limit, candles);
     cache.set(key, { timestamp: Date.now(), data });
 }
 function clearMomentumAnalysisCache() {
     cache.clear();
 }
 async function getMomentumAnalysis(symbol, timeframe, options = {}) {
-    const cached = getCached(symbol, timeframe);
+    const limit = options.limit ?? marketDataService_1.DEFAULT_ANALYSIS_CANDLE_LIMIT;
+    const { analysisCandles: candles } = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe, { limit });
+    const cached = getCached(symbol, timeframe, limit, candles);
     if (cached) {
         return cached;
     }
-    const { candles } = await (0, marketDataService_1.getValidatedCandles)(symbol, timeframe, { limit: options.limit });
     const indicators = (0, indicatorService_1.computeIndicators)(candles, symbol, timeframe);
     const structureResult = (0, marketStructureService_1.getMarketStructure)(candles, {});
     const momentum = (0, momentumAnalysisEngine_1.analyzeMomentum)(candles, indicators.indicators, structureResult.structure);
@@ -45,7 +47,7 @@ async function getMomentumAnalysis(symbol, timeframe, options = {}) {
         timeframe,
         momentum,
     };
-    setCache(symbol, timeframe, result);
+    setCache(symbol, timeframe, limit, candles, result);
     return result;
 }
 //# sourceMappingURL=momentumAnalysisService.js.map

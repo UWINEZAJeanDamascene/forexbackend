@@ -5,6 +5,10 @@ import { env } from '../config/env';
 function cleanDatabaseUrl(url: string): string {
   try {
     const u = new URL(url);
+    const sslMode = u.searchParams.get('sslmode');
+    if (sslMode === 'prefer' || sslMode === 'require' || sslMode === 'verify-ca') {
+      u.searchParams.set('sslmode', 'verify-full');
+    }
     if (u.searchParams.has('channel_binding')) {
       u.searchParams.delete('channel_binding');
     }
